@@ -651,7 +651,7 @@ export default function App() {
           background-size: 16px 16px !important;
         }
       `}</style>
-      <div className="w-full h-[50vh] md:h-full md:w-[400px] shrink-0 bg-white shadow-2xl z-20 flex flex-col relative overflow-hidden">
+      <div className="w-full max-h-[55vh] md:max-h-none md:h-full md:w-[400px] shrink-0 bg-white shadow-2xl z-20 flex flex-col relative overflow-hidden">
         <div className="absolute inset-0 z-0 flex items-center justify-center opacity-[0.03] pointer-events-none">
           <Route className="w-[150%] h-[150%] text-blue-900 -rotate-12" />
         </div>
@@ -705,7 +705,7 @@ export default function App() {
           </div>
         </div>
 
-        <div className="p-4 md:p-6 flex-1 space-y-4 md:space-y-6 overflow-y-auto relative z-10 flex flex-col">
+        <div className="p-3 md:p-6 shrink min-h-0 space-y-3 md:space-y-6 overflow-y-auto relative z-10 flex flex-col">
           <div className="flex flex-col gap-3">
             {locations.map((loc, idx) => (
               <div key={idx} className="relative">
@@ -749,7 +749,7 @@ export default function App() {
             ))}
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-3 shrink-0">
             <div className="space-y-1">
               <label className="text-sm font-semibold text-gray-700">Travel Mode</label>
               <div className="grid grid-cols-3 gap-2">
