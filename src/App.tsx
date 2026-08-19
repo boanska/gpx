@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, MutableRefObject } from 'react';
-import { MapContainer, TileLayer, Polyline, useMap, Marker, Tooltip, useMapEvents, LayersControl } from 'react-leaflet';
-import { FileDown, Route, Loader2, MapPin, Search, Plus, X, ArrowRight, Footprints, Car, Train } from 'lucide-react';
+import { MapContainer, TileLayer, Polyline, useMap, Marker, Tooltip, useMapEvents, LayerGroup } from 'react-leaflet';
+import { FileDown, Route, Loader2, MapPin, Search, Plus, Minus, X, ArrowRight, Footprints, Car, Train, Layers } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -79,6 +79,22 @@ async function getRoute(locations: {lat: number, lng: number}[], mode: string) {
   if (locations.length < 2) return [];
 
   if (mode === 'car') {
+    // Try BRouter 'car-eco' first for a balanced, more direct route
+    try {
+      const brouterCoords = locations.map(l => `${l.lng},${l.lat}`).join('|');
+      const brouterUrl = `https://brouter.de/brouter?lonlats=${brouterCoords}&profile=car-eco&format=geojson`;
+      const res = await fetch(brouterUrl);
+      const text = await res.text();
+      const data = JSON.parse(text);
+      if (data.features && data.features.length > 0) {
+        const coords = data.features[0].geometry.coordinates;
+        return coords.map((c: number[]) => ({ lat: c[1], lng: c[0] }));
+      }
+    } catch (e) {
+      console.warn("BRouter car-fast failed, falling back to OSRM", e);
+    }
+
+    // Fallback to OSRM if BRouter fails (e.g., watchdog timeout on massive routes)
     const coords = locations.map(l => `${l.lng},${l.lat}`).join(';');
     const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`;
     const res = await fetch(url);
@@ -94,10 +110,43 @@ async function getRoute(locations: {lat: number, lng: number}[], mode: string) {
       return coords.map((c: number[]) => ({ lat: c[1], lng: c[0] }));
     }
     throw new Error(`Car route not found. Try a different location.`);
-  } else if (mode === 'train' || mode === 'foot') {
+  } else if (mode === 'foot') {
+    try {
+      const coords = locations.map(l => `${l.lng},${l.lat}`).join(';');
+      const url = `https://router.project-osrm.org/route/v1/foot/${coords}?overview=full&geometries=geojson`;
+      const res = await fetch(url);
+      const text = await res.text();
+      const data = JSON.parse(text);
+      if (data.code === 'Ok' && data.routes.length > 0) {
+        const coords = data.routes[0].geometry.coordinates;
+        return coords.map((c: number[]) => ({ lat: c[1], lng: c[0] }));
+      }
+    } catch (e) {
+      console.warn("OSRM foot failed, falling back to BRouter shortest", e);
+    }
+
+    const brouterCoords = locations.map(l => `${l.lng},${l.lat}`).join('|');
+    const brouterUrl = `https://brouter.de/brouter?lonlats=${brouterCoords}&profile=shortest&format=geojson`;
+    const res = await fetch(brouterUrl);
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      if (text.includes('thread-priority-watchdog')) {
+        throw new Error(`The walking distance is too long to calculate. Please try a shorter route or add more stops.`);
+      }
+      throw new Error(`Walking route not found. Server returned: ${text.slice(0, 50)}...`);
+    }
+    if (data.features && data.features.length > 0) {
+      const coords = data.features[0].geometry.coordinates;
+      return coords.map((c: number[]) => ({ lat: c[1], lng: c[0] }));
+    }
+    throw new Error(`Walking route not found.`);
+
+  } else if (mode === 'train') {
     const coords = locations.map(l => `${l.lng},${l.lat}`).join('|');
-    const profile = mode === 'train' ? 'rail' : 'trekking';
-    const url = `https://brouter.de/brouter?lonlats=${coords}&profile=${profile}&format=geojson`;
+    const url = `https://brouter.de/brouter?lonlats=${coords}&profile=rail&format=geojson`;
     const res = await fetch(url);
     const text = await res.text();
     let data;
@@ -105,57 +154,173 @@ async function getRoute(locations: {lat: number, lng: number}[], mode: string) {
       data = JSON.parse(text);
     } catch (e) {
       if (text.includes('thread-priority-watchdog')) {
-        throw new Error(`The ${mode === 'train' ? 'train' : 'walking'} distance is too long to calculate. Please try a shorter route or add more stops.`);
+        throw new Error(`The train distance is too long to calculate. Please try a shorter route or add more stops.`);
       }
-      throw new Error(`${mode === 'train' ? 'Train' : 'Walking'} route not found. Server returned: ${text.slice(0, 50)}...`);
+      throw new Error(`Train route not found. Server returned: ${text.slice(0, 50)}...`);
     }
     if (data.features && data.features.length > 0) {
       const coords = data.features[0].geometry.coordinates;
       return coords.map((c: number[]) => ({ lat: c[1], lng: c[0] }));
     }
-    throw new Error(`${mode === 'train' ? 'Train' : 'Walking'} route not found.`);
+    throw new Error(`Train route not found.`);
   }
   throw new Error("Invalid travel mode.");
 }
 
-function MapUpdater({ points }: { points: {lat: number, lng: number}[] }) {
+function MapUpdater({ points, disableAutoFit }: { points: {lat: number, lng: number}[], disableAutoFit: MutableRefObject<boolean> }) {
   const map = useMap();
   useEffect(() => {
     if (points.length > 0) {
-      const bounds = L.latLngBounds(points);
-      map.fitBounds(bounds, { padding: [50, 50] });
+      if (!disableAutoFit.current) {
+        const bounds = L.latLngBounds(points);
+        map.fitBounds(bounds, { padding: [50, 50] });
+      }
+      disableAutoFit.current = false;
     }
-  }, [points, map]);
+  }, [points, map, disableAutoFit]);
   return null;
+}
+
+function CustomZoomControl() {
+  const map = useMap();
+  const divRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (divRef.current) {
+      L.DomEvent.disableClickPropagation(divRef.current);
+      L.DomEvent.disableScrollPropagation(divRef.current);
+    }
+  }, []);
+
+  return (
+    <div 
+      ref={divRef}
+      className="absolute top-4 left-4 z-[1000] flex flex-col shadow-md rounded-lg overflow-hidden border-2 border-gray-200/50"
+    >
+      <button 
+        onClick={() => map.zoomIn()} 
+        className="w-7 h-7 bg-white flex items-center justify-center text-gray-700 hover:bg-gray-50 hover:text-blue-600 transition-colors border-b border-gray-100"
+        title="Zoom In"
+      >
+        <Plus className="w-4 h-4" />
+      </button>
+      <button 
+        onClick={() => map.zoomOut()} 
+        className="w-7 h-7 bg-white flex items-center justify-center text-gray-700 hover:bg-gray-50 hover:text-blue-600 transition-colors"
+        title="Zoom Out"
+      >
+        <Minus className="w-4 h-4" />
+      </button>
+    </div>
+  );
 }
 
 function MapEvents({ 
   locations,
   setLocations,
-  mapClickGuard
+  mapClickGuard,
+  disableAutoFit
 }: { 
   locations: ({lat: number, lng: number, name: string, shortName?: string} | null)[],
   setLocations: (locs: ({lat: number, lng: number, name: string, shortName?: string} | null)[]) => void,
-  mapClickGuard: MutableRefObject<number>
+  mapClickGuard: MutableRefObject<number>,
+  disableAutoFit: MutableRefObject<boolean>
 }) {
   useMapEvents({
+    moveend(e) {
+      const map = e.target;
+      localStorage.setItem('gpx_mapView', JSON.stringify({
+        center: map.getCenter(),
+        zoom: map.getZoom()
+      }));
+    },
     async click(e) {
       if (Date.now() - mapClickGuard.current < 500) return;
+
+      // Find first empty slot
+      const emptyIdx = locations.findIndex(l => l === null);
+      
+      // If no empty slots exist, do nothing on map click
+      if (emptyIdx === -1) return;
+
+      disableAutoFit.current = true;
 
       const { name, shortName } = await reverseGeocode(e.latlng.lat, e.latlng.lng);
       const newLoc = { lat: e.latlng.lat, lng: e.latlng.lng, name, shortName };
       
       const newLocs = [...locations];
-      // Find first empty slot
-      const emptyIdx = newLocs.findIndex(l => l === null);
-      if (emptyIdx !== -1) {
-        newLocs[emptyIdx] = newLoc;
-      } else {
-        newLocs.push(newLoc);
-      }
+      newLocs[emptyIdx] = newLoc;
       setLocations(newLocs);
     }
   });
+  return null;
+}
+
+async function parseSpecialInput(input: string): Promise<{lat: number, lng: number, name: string, shortName: string}[] | null> {
+  const waypoints: {lat: number, lng: number, name: string, shortName: string}[] = [];
+
+  // 1. Single coordinate pair
+  const coordMatch = input.trim().match(/^([-+]?\d{1,2}(?:\.\d+)?)[,\s]+([-+]?\d{1,3}(?:\.\d+)?)$/);
+  if (coordMatch) {
+    const lat = parseFloat(coordMatch[1]);
+    const lng = parseFloat(coordMatch[2]);
+    if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+      const { name, shortName } = await reverseGeocode(lat, lng);
+      waypoints.push({ lat, lng, name, shortName });
+      return waypoints;
+    }
+  }
+
+  // 2. Google Maps URL (dir)
+  if (input.includes('google.') && input.includes('/dir/')) {
+    try {
+      const urlStr = input.match(/https?:\/\/[^\s]+/)?.[0];
+      if (urlStr) {
+        const url = new URL(urlStr);
+        const pathParts = url.pathname.split('/dir/')[1]?.split('/') || [];
+        for (const part of pathParts) {
+          if (!part || part.startsWith('@') || part.startsWith('data=')) continue;
+          const ptMatch = part.match(/^([-+]?\d{1,2}(?:\.\d+)?),([-+]?\d{1,3}(?:\.\d+)?)$/);
+          if (ptMatch) {
+            const lat = parseFloat(ptMatch[1]);
+            const lng = parseFloat(ptMatch[2]);
+            const { name, shortName } = await reverseGeocode(lat, lng);
+            waypoints.push({ lat, lng, name, shortName });
+          } else {
+            const decoded = decodeURIComponent(part).replace(/\+/g, ' ');
+            const searchRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(decoded)}&limit=1&addressdetails=1`, {
+              headers: { 'User-Agent': 'MapsToGPX-AIStudio-App' }
+            });
+            const data = await searchRes.json();
+            if (data && data.length > 0) {
+              const r = data[0];
+              const shortName = r.address ? (r.address.city || r.address.town || r.address.village || r.address.county || r.name) : r.display_name.split(',')[0];
+              waypoints.push({
+                lat: parseFloat(r.lat),
+                lng: parseFloat(r.lon),
+                name: r.display_name,
+                shortName
+              });
+            }
+          }
+        }
+        if (waypoints.length > 0) return waypoints;
+      }
+    } catch (e) { console.error(e); }
+  }
+
+  // 3. Google Maps URL (place or general @lat,lng)
+  if (input.includes('google.') && input.includes('/maps/')) {
+    const atMatch = input.match(/@([-+]?\d{1,2}(?:\.\d+)?),([-+]?\d{1,3}(?:\.\d+)?)/);
+    if (atMatch) {
+      const lat = parseFloat(atMatch[1]);
+      const lng = parseFloat(atMatch[2]);
+      const { name, shortName } = await reverseGeocode(lat, lng);
+      waypoints.push({ lat, lng, name, shortName });
+      return waypoints;
+    }
+  }
+
   return null;
 }
 
@@ -164,13 +329,15 @@ function LocationSearch({
   placeholder, 
   location,
   onSelect,
-  onRemove
+  onRemove,
+  onMultiSelect
 }: { 
   label: string, 
   placeholder: string, 
   location: {lat: number, lng: number, name: string, shortName?: string} | null,
   onSelect: (loc: {lat: number, lng: number, name: string, shortName?: string} | null) => void,
-  onRemove?: () => void
+  onRemove?: () => void,
+  onMultiSelect?: (locs: {lat: number, lng: number, name: string, shortName?: string}[]) => void
 }) {
   const [query, setQuery] = useState(location?.name || '');
   const [results, setResults] = useState<any[]>([]);
@@ -184,8 +351,39 @@ function LocationSearch({
     if (query === location?.name) return; // Don't search if query is exactly the synced location
     
     const delay = setTimeout(async () => {
+      if (query.includes('goo.gl/') || query.includes('maps.app.goo.gl/')) {
+        setResults([{
+          place_id: 'error-shortlink',
+          display_name: "Short links (goo.gl) are not supported. Please paste the full expanded Google Maps URL.",
+          unselectable: true
+        }]);
+        setIsOpen(true);
+        return;
+      }
+
       if (query.length > 2) {
         try {
+          const special = await parseSpecialInput(query);
+          if (special) {
+            if (special.length === 1) {
+              setResults([{
+                place_id: 'special-1',
+                lat: special[0].lat,
+                lon: special[0].lng,
+                display_name: special[0].name,
+                shortName: special[0].shortName,
+                isSpecial: true
+              }]);
+              setIsOpen(true);
+              return;
+            } else if (special.length > 1 && onMultiSelect) {
+              onMultiSelect(special);
+              setQuery(special[0].name);
+              setIsOpen(false);
+              return;
+            }
+          }
+
           const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&addressdetails=1`, {
             headers: { 'User-Agent': 'MapsToGPX-AIStudio-App' }
           });
@@ -238,12 +436,17 @@ function LocationSearch({
           {results.map((r: any) => (
             <li 
               key={r.place_id} 
-              className="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm text-gray-700 border-b border-gray-100 last:border-0"
+              className={`px-3 py-2 text-sm border-b border-gray-100 last:border-0 ${r.unselectable ? 'bg-red-50 text-red-600' : 'hover:bg-blue-50 cursor-pointer text-gray-700'}`}
               onClick={() => {
+                if (r.unselectable) return;
                 setQuery(r.display_name);
                 setIsOpen(false);
-                const shortName = r.address ? (r.address.city || r.address.town || r.address.village || r.address.county || r.name) : r.display_name.split(',')[0];
-                onSelect({ lat: parseFloat(r.lat), lng: parseFloat(r.lon), name: r.display_name, shortName });
+                if (r.isSpecial) {
+                  onSelect({ lat: parseFloat(r.lat), lng: parseFloat(r.lon), name: r.display_name, shortName: r.shortName });
+                } else {
+                  const shortName = r.address ? (r.address.city || r.address.town || r.address.village || r.address.county || r.name) : r.display_name.split(',')[0];
+                  onSelect({ lat: parseFloat(r.lat), lng: parseFloat(r.lon), name: r.display_name, shortName });
+                }
               }}
             >
               {r.display_name}
@@ -277,6 +480,24 @@ export default function App() {
   const [errorMsg, setErrorMsg] = useState('');
   
   const mapClickGuard = useRef(0);
+  const disableAutoFit = useRef(true);
+  const [activeLayer, setActiveLayer] = useState<'street' | 'hybrid' | 'satellite'>('street');
+  const layersControlRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (layersControlRef.current) {
+      L.DomEvent.disableClickPropagation(layersControlRef.current);
+      L.DomEvent.disableScrollPropagation(layersControlRef.current);
+    }
+  }, []);
+
+  const [initialView] = useState(() => {
+    try {
+      const saved = localStorage.getItem('gpx_mapView');
+      if (saved) return JSON.parse(saved);
+    } catch(e) {}
+    return { center: [45.9432, 24.9668], zoom: 6 };
+  });
 
   const hasRoute = routePoints.length > 0 && !isGenerating;
   const headerTitle = hasRoute ? `${routeMeta.start} → ${routeMeta.end} • ${routePoints.length} waypoints` : "GPX Generator";
@@ -366,6 +587,8 @@ export default function App() {
     e.originalEvent?.stopPropagation();
     if (validLocations.length < 2) return;
     const clickPt = e.latlng;
+    
+    disableAutoFit.current = true;
     
     let bestI = 0;
     let minDetour = Infinity;
@@ -478,11 +701,17 @@ export default function App() {
                   placeholder="(or click map)" 
                   location={loc}
                   onSelect={(newLoc) => {
+                    disableAutoFit.current = false;
                     const newLocs = [...locations];
                     newLocs[idx] = newLoc;
                     setLocations(newLocs);
                   }}
+                  onMultiSelect={(newLocs) => {
+                    disableAutoFit.current = false;
+                    setLocations(newLocs);
+                  }}
                   onRemove={locations.length > 2 ? () => {
+                    disableAutoFit.current = true;
                     const newLocs = [...locations];
                     newLocs.splice(idx, 1);
                     setLocations(newLocs);
@@ -492,6 +721,7 @@ export default function App() {
                 {idx < locations.length - 1 && (
                   <button
                     onClick={() => {
+                      disableAutoFit.current = true;
                       const newLocs = [...locations];
                       newLocs.splice(idx + 1, 0, null);
                       setLocations(newLocs);
@@ -557,7 +787,7 @@ export default function App() {
             <div className="mt-8 pb-4 space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
               <button
                 onClick={handleDownload}
-                className="w-full flex justify-center items-center py-3 px-4 rounded-xl shadow-lg text-sm font-bold text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transform transition-all hover:-translate-y-0.5 active:translate-y-0"
+                className="w-full flex justify-center items-center py-3 px-4 rounded-xl shadow-lg border border-gray-200 text-sm font-bold text-gray-700 bg-white hover:bg-gray-50 hover:text-blue-600 hover:border-blue-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transform transition-all hover:-translate-y-0.5 active:translate-y-0"
               >
                 <FileDown className="-ml-1 mr-2 h-5 w-5" />
                 Download GPX
@@ -568,22 +798,36 @@ export default function App() {
       </div>
 
       <div className="flex-1 h-full z-0 relative">
-        <MapContainer center={[45.9432, 24.9668]} zoom={6} style={{ height: '100%', width: '100%' }}>
-          <LayersControl position="topright">
-            <LayersControl.BaseLayer checked name="Street View">
-              <TileLayer
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              />
-            </LayersControl.BaseLayer>
-            <LayersControl.BaseLayer name="Satellite">
+        <MapContainer center={initialView.center} zoom={initialView.zoom} zoomControl={false} style={{ height: '100%', width: '100%' }}>
+          <CustomZoomControl />
+          {activeLayer === 'street' && (
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            />
+          )}
+          {activeLayer === 'hybrid' && (
+            <LayerGroup>
               <TileLayer
                 attribution='Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
                 url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
               />
-            </LayersControl.BaseLayer>
-          </LayersControl>
-          <MapEvents locations={locations} setLocations={setLocations} mapClickGuard={mapClickGuard} />
+              <TileLayer
+                url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}"
+              />
+              <TileLayer
+                url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
+              />
+            </LayerGroup>
+          )}
+          {activeLayer === 'satellite' && (
+            <TileLayer
+              attribution='Tiles &copy; Esri'
+              url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+            />
+          )}
+
+          <MapEvents locations={locations} setLocations={setLocations} mapClickGuard={mapClickGuard} disableAutoFit={disableAutoFit} />
           
           {locations.map((loc, idx) => {
             if (!loc) return null;
@@ -592,8 +836,34 @@ export default function App() {
                 key={idx}
                 position={[loc.lat, loc.lng]} 
                 draggable={true}
+                icon={L.divIcon({
+                  html: idx === 0 
+                    ? `<div class="relative w-8 h-10 flex flex-col items-center">
+                         <div class="absolute -bottom-1 w-5 h-2 bg-black/40 blur-[2px] rounded-[100%]"></div>
+                         <div class="w-8 h-8 bg-blue-500 rounded-full border-[3px] border-white shadow-md flex items-center justify-center relative z-10">
+                           <div class="w-2.5 h-2.5 bg-white rounded-full opacity-80"></div>
+                         </div>
+                         <div class="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[8px] border-t-white absolute bottom-0.5"></div>
+                       </div>`
+                    : idx === locations.length - 1
+                    ? `<div class="relative w-8 h-10 flex flex-col items-center">
+                         <div class="absolute -bottom-1 w-5 h-2 bg-black/40 blur-[2px] rounded-[100%]"></div>
+                         <div class="w-8 h-8 rounded-full border-[3px] border-white shadow-md flex items-center justify-center relative z-10 overflow-hidden bg-white">
+                           <div class="w-full h-full" style="background-image: conic-gradient(#1f2937 90deg, #ffffff 90deg 180deg, #1f2937 180deg 270deg, #ffffff 270deg); background-size: 50% 50%;"></div>
+                         </div>
+                         <div class="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[8px] border-t-white absolute bottom-0.5"></div>
+                       </div>`
+                    : `<div class="relative w-6 h-6 flex flex-col items-center justify-center">
+                         <div class="absolute top-1 w-5 h-5 bg-black/30 blur-[2px] rounded-full"></div>
+                         <div class="w-5 h-5 bg-white rounded-full border-[3px] border-gray-400 relative z-10"></div>
+                       </div>`,
+                  className: '',
+                  iconSize: idx === 0 || idx === locations.length - 1 ? [32, 40] : [24, 24],
+                  iconAnchor: idx === 0 || idx === locations.length - 1 ? [16, 40] : [12, 12]
+                })}
                 eventHandlers={{
                   async dragend(e) {
+                    disableAutoFit.current = true;
                     const m = e.target;
                     const pos = m.getLatLng();
                     const { name, shortName } = await reverseGeocode(pos.lat, pos.lng);
@@ -602,9 +872,7 @@ export default function App() {
                     setLocations(newLocs);
                   }
                 }}
-              >
-                <Tooltip permanent direction="top">{idx === 0 ? 'Start' : idx === locations.length - 1 ? 'Destination' : `Stop ${idx}`}</Tooltip>
-              </Marker>
+              />
             );
           })}
 
@@ -618,10 +886,45 @@ export default function App() {
                 className={isGenerating ? "animate-pulse transition-opacity duration-300" : "transition-opacity duration-300"}
                 eventHandlers={{ click: handlePolylineClick }}
               />
-              <MapUpdater points={routePoints} />
+              <MapUpdater points={routePoints} disableAutoFit={disableAutoFit} />
             </>
           )}
         </MapContainer>
+
+        <div ref={layersControlRef} className="absolute top-4 right-4 z-[1000] flex flex-row-reverse items-start group">
+          <button 
+            onClick={() => {
+              if (activeLayer === 'street') setActiveLayer('hybrid');
+              else if (activeLayer === 'hybrid') setActiveLayer('satellite');
+              else setActiveLayer('street');
+            }}
+            className="w-10 h-10 bg-white rounded-lg shadow-md border-2 border-gray-200/50 flex items-center justify-center text-gray-700 hover:bg-gray-50 hover:text-blue-600 transition-colors"
+            title="Toggle Map Layer"
+          >
+            <Layers className="w-5 h-5" />
+          </button>
+          
+          <div className="mr-2 bg-white rounded-lg shadow-md p-1.5 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none group-hover:pointer-events-auto">
+            <button 
+              onClick={() => setActiveLayer('street')} 
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${activeLayer === 'street' ? 'bg-blue-100 text-blue-700' : 'bg-transparent text-gray-700 hover:bg-gray-100'}`}
+            >
+              Street
+            </button>
+            <button 
+              onClick={() => setActiveLayer('hybrid')} 
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${activeLayer === 'hybrid' ? 'bg-blue-100 text-blue-700' : 'bg-transparent text-gray-700 hover:bg-gray-100'}`}
+            >
+              Hybrid
+            </button>
+            <button 
+              onClick={() => setActiveLayer('satellite')} 
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${activeLayer === 'satellite' ? 'bg-blue-100 text-blue-700' : 'bg-transparent text-gray-700 hover:bg-gray-100'}`}
+            >
+              Satellite
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
