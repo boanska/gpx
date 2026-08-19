@@ -795,17 +795,17 @@ export default function App() {
               {errorMsg}
             </div>
           )}
+        </div>
 
-          <div className="pt-6 pb-2 mt-auto text-center shrink-0">
-            <a 
-              href="https://github.com/boanska" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="text-xs text-gray-400 hover:text-blue-500 transition-colors"
-            >
-              &copy; github.com/boanska
-            </a>
-          </div>
+        <div className="w-full text-center py-1 bg-white/80 backdrop-blur-sm shrink-0 relative z-20">
+          <a 
+            href="https://github.com/boanska" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="text-[11px] text-gray-400 hover:text-blue-500 transition-colors block"
+          >
+            &copy; github.com/boanska
+          </a>
         </div>
       </div>
 
