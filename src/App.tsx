@@ -628,13 +628,14 @@ export default function App() {
 
   const handleDownload = () => {
     if (routePoints.length === 0) return;
-    const fileName = `${routeMeta.start}-${routeMeta.end}(${travelMode})`;
+    const modeStr = travelMode === 'foot' ? 'walk' : travelMode;
+    const fileName = `${routeMeta.start}-${routeMeta.end}(${modeStr})`;
     const gpxData = generateGpx(routePoints, fileName);
     const blob = new Blob([gpxData], { type: 'application/gpx+xml' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${fileName.replace(/[^a-z0-9\-\(\)]/gi, '_').toLowerCase()}.gpx`;
+    a.download = `${fileName.replace(/[^\p{L}\p{N}\-\(\)]/gu, '_').toLowerCase()}.gpx`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -655,39 +656,51 @@ export default function App() {
           <Route className="w-[150%] h-[150%] text-blue-900 -rotate-12" />
         </div>
 
-        <div className="py-2 px-3 md:py-2.5 md:px-4 bg-blue-600 text-white shrink-0 shadow-md relative z-20">
-          <div className="flex items-center space-x-2 w-full overflow-hidden">
-            {isGenerating && !errorMsg ? (
-              <>
-                <Loader2 className="w-4 h-4 text-blue-100 shrink-0 animate-spin" />
-                <div className="flex-1 overflow-hidden relative flex items-center">
-                  <div className="text-sm font-bold tracking-tight whitespace-nowrap">
-                    Calculating route...
+        <div className="py-2 px-3 md:py-2.5 md:px-4 bg-blue-600 text-white shrink-0 shadow-md sticky top-0 z-50">
+          <div className="flex items-center justify-between gap-2 w-full">
+            <div className="flex items-center space-x-2 flex-1 overflow-hidden">
+              {isGenerating && !errorMsg ? (
+                <>
+                  <Loader2 className="w-4 h-4 text-blue-100 shrink-0 animate-spin" />
+                  <div className="flex-1 overflow-hidden relative flex items-center">
+                    <div className="text-sm font-bold tracking-tight whitespace-nowrap">
+                      Calculating route...
+                    </div>
                   </div>
-                </div>
-              </>
-            ) : (
-              <>
-                <Route className="w-4 h-4 text-blue-100 shrink-0" />
-                <div className="flex-1 overflow-hidden relative flex items-center" ref={headerContainerRef}>
-                  <div 
-                    ref={headerTextRef} 
-                    style={{ transform: `scale(${textScale})`, transformOrigin: 'left center' }}
-                    className="text-sm font-bold tracking-tight whitespace-nowrap transition-transform duration-200 flex items-center gap-1.5"
-                  >
-                    {hasRoute ? (
-                      <>
-                        <span>{routeMeta.start}</span>
-                        <ArrowRight className="w-3.5 h-3.5 opacity-75" />
-                        <span>{routeMeta.end}</span>
-                        <span className="font-normal opacity-80 ml-1">• {routePoints.length} waypoints</span>
-                      </>
-                    ) : (
-                      "GPX Generator"
-                    )}
+                </>
+              ) : (
+                <>
+                  <Route className="w-4 h-4 text-blue-100 shrink-0" />
+                  <div className="flex-1 overflow-hidden relative flex items-center" ref={headerContainerRef}>
+                    <div 
+                      ref={headerTextRef} 
+                      style={{ transform: `scale(${textScale})`, transformOrigin: 'left center' }}
+                      className="text-sm font-bold tracking-tight whitespace-nowrap transition-transform duration-200 flex items-center gap-1.5"
+                    >
+                      {hasRoute ? (
+                        <>
+                          <span>{routeMeta.start}</span>
+                          <ArrowRight className="w-3.5 h-3.5 opacity-75" />
+                          <span>{routeMeta.end}</span>
+                          <span className="font-normal opacity-80 ml-1">• {routePoints.length} waypoints</span>
+                        </>
+                      ) : (
+                        "GPX Generator"
+                      )}
+                    </div>
                   </div>
-                </div>
-              </>
+                </>
+              )}
+            </div>
+
+            {hasRoute && (
+              <button
+                onClick={handleDownload}
+                className="shrink-0 bg-white/10 hover:bg-white/20 text-white p-1.5 rounded-lg transition-colors flex items-center justify-center"
+                title="Download GPX"
+              >
+                <FileDown className="w-5 h-5" />
+              </button>
             )}
           </div>
         </div>
@@ -780,18 +793,6 @@ export default function App() {
           {errorMsg && (
             <div className="p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-100">
               {errorMsg}
-            </div>
-          )}
-
-          {routePoints.length > 0 && !isGenerating && (
-            <div className="mt-8 pb-4 space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-              <button
-                onClick={handleDownload}
-                className="w-full flex justify-center items-center py-3 px-4 rounded-xl shadow-lg border border-gray-200 text-sm font-bold text-gray-700 bg-white hover:bg-gray-50 hover:text-blue-600 hover:border-blue-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transform transition-all hover:-translate-y-0.5 active:translate-y-0"
-              >
-                <FileDown className="-ml-1 mr-2 h-5 w-5" />
-                Download GPX
-              </button>
             </div>
           )}
         </div>
@@ -891,20 +892,20 @@ export default function App() {
           )}
         </MapContainer>
 
-        <div ref={layersControlRef} className="absolute top-4 right-4 z-[1000] flex flex-row-reverse items-start group">
+        <div ref={layersControlRef} className="absolute top-4 right-4 z-[1000] flex flex-row-reverse items-start">
           <button 
             onClick={() => {
-              if (activeLayer === 'street') setActiveLayer('hybrid');
-              else if (activeLayer === 'hybrid') setActiveLayer('satellite');
+              if (activeLayer === 'street') setActiveLayer('satellite');
+              else if (activeLayer === 'satellite') setActiveLayer('hybrid');
               else setActiveLayer('street');
             }}
-            className="w-10 h-10 bg-white rounded-lg shadow-md border-2 border-gray-200/50 flex items-center justify-center text-gray-700 hover:bg-gray-50 hover:text-blue-600 transition-colors"
+            className="w-10 h-10 bg-white rounded-lg shadow-md border-2 border-gray-200/50 flex items-center justify-center text-gray-700 hover:bg-gray-50 hover:text-blue-600 transition-colors peer"
             title="Toggle Map Layer"
           >
             <Layers className="w-5 h-5" />
           </button>
           
-          <div className="mr-2 bg-white rounded-lg shadow-md p-1.5 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none group-hover:pointer-events-auto">
+          <div className="mr-2 bg-white rounded-lg shadow-md p-1.5 flex gap-1.5 opacity-0 peer-hover:opacity-100 hover:opacity-100 transition-opacity duration-200 pointer-events-none peer-hover:pointer-events-auto hover:pointer-events-auto">
             <button 
               onClick={() => setActiveLayer('street')} 
               className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${activeLayer === 'street' ? 'bg-blue-100 text-blue-700' : 'bg-transparent text-gray-700 hover:bg-gray-100'}`}
@@ -912,16 +913,16 @@ export default function App() {
               Street
             </button>
             <button 
-              onClick={() => setActiveLayer('hybrid')} 
-              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${activeLayer === 'hybrid' ? 'bg-blue-100 text-blue-700' : 'bg-transparent text-gray-700 hover:bg-gray-100'}`}
-            >
-              Hybrid
-            </button>
-            <button 
               onClick={() => setActiveLayer('satellite')} 
               className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${activeLayer === 'satellite' ? 'bg-blue-100 text-blue-700' : 'bg-transparent text-gray-700 hover:bg-gray-100'}`}
             >
               Satellite
+            </button>
+            <button 
+              onClick={() => setActiveLayer('hybrid')} 
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${activeLayer === 'hybrid' ? 'bg-blue-100 text-blue-700' : 'bg-transparent text-gray-700 hover:bg-gray-100'}`}
+            >
+              Hybrid
             </button>
           </div>
         </div>
