@@ -705,7 +705,7 @@ export default function App() {
           </div>
         </div>
 
-        <div className="p-4 md:p-6 flex-1 space-y-4 md:space-y-6 overflow-y-auto relative z-10">
+        <div className="p-4 md:p-6 flex-1 space-y-4 md:space-y-6 overflow-y-auto relative z-10 flex flex-col">
           <div className="flex flex-col gap-3">
             {locations.map((loc, idx) => (
               <div key={idx} className="relative">
@@ -791,10 +791,21 @@ export default function App() {
           </div>
 
           {errorMsg && (
-            <div className="p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-100">
+            <div className="p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-100 shrink-0">
               {errorMsg}
             </div>
           )}
+
+          <div className="pt-6 pb-2 mt-auto text-center shrink-0">
+            <a 
+              href="https://github.com/boanska" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-xs text-gray-400 hover:text-blue-500 transition-colors"
+            >
+              &copy; github.com/boanska
+            </a>
+          </div>
         </div>
       </div>
 
