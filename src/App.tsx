@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, MutableRefObject } from 'react';
 import { MapContainer, TileLayer, Polyline, useMap, Marker, Tooltip, useMapEvents, LayersControl } from 'react-leaflet';
-import { FileDown, Route, Loader2, MapPin, Search, Plus, X } from 'lucide-react';
+import { FileDown, Route, Loader2, MapPin, Search, Plus, X, ArrowRight, Footprints, Car, Train } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -23,15 +23,16 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return R * c;
 }
 
-async function reverseGeocode(lat: number, lng: number): Promise<string> {
+async function reverseGeocode(lat: number, lng: number): Promise<{name: string, shortName: string}> {
   try {
     const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`, {
       headers: { 'User-Agent': 'MapsToGPX-AIStudio-App' }
     });
     const data = await res.json();
-    return data.display_name || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+    const shortName = data.address ? (data.address.city || data.address.town || data.address.village || data.address.county || data.name) : (data.display_name ? data.display_name.split(',')[0] : `${lat.toFixed(4)}`);
+    return { name: data.display_name || `${lat.toFixed(4)}, ${lng.toFixed(4)}`, shortName: shortName || `${lat.toFixed(4)}` };
   } catch (e) {
-    return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+    return { name: `${lat.toFixed(4)}, ${lng.toFixed(4)}`, shortName: `${lat.toFixed(4)}` };
   }
 }
 
@@ -103,6 +104,9 @@ async function getRoute(locations: {lat: number, lng: number}[], mode: string) {
     try {
       data = JSON.parse(text);
     } catch (e) {
+      if (text.includes('thread-priority-watchdog')) {
+        throw new Error(`The ${mode === 'train' ? 'train' : 'walking'} distance is too long to calculate. Please try a shorter route or add more stops.`);
+      }
       throw new Error(`${mode === 'train' ? 'Train' : 'Walking'} route not found. Server returned: ${text.slice(0, 50)}...`);
     }
     if (data.features && data.features.length > 0) {
@@ -130,16 +134,16 @@ function MapEvents({
   setLocations,
   mapClickGuard
 }: { 
-  locations: ({lat: number, lng: number, name: string} | null)[],
-  setLocations: (locs: ({lat: number, lng: number, name: string} | null)[]) => void,
+  locations: ({lat: number, lng: number, name: string, shortName?: string} | null)[],
+  setLocations: (locs: ({lat: number, lng: number, name: string, shortName?: string} | null)[]) => void,
   mapClickGuard: MutableRefObject<number>
 }) {
   useMapEvents({
     async click(e) {
       if (Date.now() - mapClickGuard.current < 500) return;
 
-      const name = await reverseGeocode(e.latlng.lat, e.latlng.lng);
-      const newLoc = { lat: e.latlng.lat, lng: e.latlng.lng, name };
+      const { name, shortName } = await reverseGeocode(e.latlng.lat, e.latlng.lng);
+      const newLoc = { lat: e.latlng.lat, lng: e.latlng.lng, name, shortName };
       
       const newLocs = [...locations];
       // Find first empty slot
@@ -164,8 +168,8 @@ function LocationSearch({
 }: { 
   label: string, 
   placeholder: string, 
-  location: {lat: number, lng: number, name: string} | null,
-  onSelect: (loc: {lat: number, lng: number, name: string} | null) => void,
+  location: {lat: number, lng: number, name: string, shortName?: string} | null,
+  onSelect: (loc: {lat: number, lng: number, name: string, shortName?: string} | null) => void,
   onRemove?: () => void
 }) {
   const [query, setQuery] = useState(location?.name || '');
@@ -182,7 +186,7 @@ function LocationSearch({
     const delay = setTimeout(async () => {
       if (query.length > 2) {
         try {
-          const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`, {
+          const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&addressdetails=1`, {
             headers: { 'User-Agent': 'MapsToGPX-AIStudio-App' }
           });
           const data = await res.json();
@@ -238,7 +242,8 @@ function LocationSearch({
               onClick={() => {
                 setQuery(r.display_name);
                 setIsOpen(false);
-                onSelect({ lat: parseFloat(r.lat), lng: parseFloat(r.lon), name: r.display_name });
+                const shortName = r.address ? (r.address.city || r.address.town || r.address.village || r.address.county || r.name) : r.display_name.split(',')[0];
+                onSelect({ lat: parseFloat(r.lat), lng: parseFloat(r.lon), name: r.display_name, shortName });
               }}
             >
               {r.display_name}
@@ -251,7 +256,7 @@ function LocationSearch({
 }
 
 export default function App() {
-  const [locations, setLocations] = useState<({lat: number, lng: number, name: string} | null)[]>(() => {
+  const [locations, setLocations] = useState<({lat: number, lng: number, name: string, shortName?: string} | null)[]>(() => {
     try {
       const saved = localStorage.getItem('gpx_locations');
       if (saved) {
@@ -268,10 +273,41 @@ export default function App() {
   
   const [isGenerating, setIsGenerating] = useState(false);
   const [routePoints, setRoutePoints] = useState<{lat: number, lng: number}[]>([]);
-  const [routeName, setRouteName] = useState('My Route');
+  const [routeMeta, setRouteMeta] = useState({ start: '', end: '' });
   const [errorMsg, setErrorMsg] = useState('');
   
   const mapClickGuard = useRef(0);
+
+  const hasRoute = routePoints.length > 0 && !isGenerating;
+  const headerTitle = hasRoute ? `${routeMeta.start} → ${routeMeta.end} • ${routePoints.length} waypoints` : "GPX Generator";
+
+  const headerContainerRef = useRef<HTMLDivElement>(null);
+  const headerTextRef = useRef<HTMLDivElement>(null);
+  const [textScale, setTextScale] = useState(1);
+
+  useEffect(() => {
+    const checkFit = () => {
+      if (headerTextRef.current && headerContainerRef.current) {
+        // Reset scale briefly to measure intrinsic width
+        headerTextRef.current.style.transform = 'scale(1)';
+        const containerWidth = headerContainerRef.current.clientWidth;
+        const textWidth = headerTextRef.current.scrollWidth;
+        
+        if (textWidth > containerWidth && containerWidth > 0) {
+          setTextScale(containerWidth / textWidth);
+        } else {
+          setTextScale(1);
+        }
+      }
+    };
+    
+    const timer = setTimeout(checkFit, 50);
+    window.addEventListener('resize', checkFit);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', checkFit);
+    };
+  }, [headerTitle, locations]);
 
   useEffect(() => {
     localStorage.setItem('gpx_locations', JSON.stringify(locations));
@@ -281,7 +317,7 @@ export default function App() {
     localStorage.setItem('gpx_travelMode', travelMode);
   }, [travelMode]);
 
-  const validLocations = locations.filter(l => l !== null) as {lat: number, lng: number, name: string}[];
+  const validLocations = locations.filter(l => l !== null) as {lat: number, lng: number, name: string, shortName?: string}[];
 
   useEffect(() => {
     if (validLocations.length < 2) {
@@ -296,9 +332,9 @@ export default function App() {
       setIsGenerating(true);
       setErrorMsg('');
       try {
-        const startName = validLocations[0].name.split(',')[0];
-        const endName = validLocations[validLocations.length - 1].name.split(',')[0];
-        if (!isCancelled) setRouteName(`${startName} to ${endName} (${travelMode})`);
+        const startName = validLocations[0].shortName || validLocations[0].name.split(',')[0];
+        const endName = validLocations[validLocations.length - 1].shortName || validLocations[validLocations.length - 1].name.split(',')[0];
+        if (!isCancelled) setRouteMeta({ start: startName, end: endName });
         
         const path = await getRoute(validLocations, travelMode);
         
@@ -369,12 +405,13 @@ export default function App() {
 
   const handleDownload = () => {
     if (routePoints.length === 0) return;
-    const gpxData = generateGpx(routePoints, routeName);
+    const fileName = `${routeMeta.start}-${routeMeta.end}(${travelMode})`;
+    const gpxData = generateGpx(routePoints, fileName);
     const blob = new Blob([gpxData], { type: 'application/gpx+xml' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${routeName.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.gpx`;
+    a.download = `${fileName.replace(/[^a-z0-9\-\(\)]/gi, '_').toLowerCase()}.gpx`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -390,18 +427,49 @@ export default function App() {
           background-size: 16px 16px !important;
         }
       `}</style>
-      <div className="w-full h-[50vh] md:h-full md:w-[400px] shrink-0 bg-white shadow-2xl z-10 flex flex-col overflow-y-auto">
-        <div className="p-4 md:p-6 bg-blue-600 text-white shrink-0">
-          <div className="flex items-center space-x-2">
-            <Route className="w-5 h-5 md:w-6 md:h-6 text-blue-100" />
-            <h1 className="text-lg md:text-xl font-bold tracking-tight">GPX Generator</h1>
-          </div>
-          <p className="text-blue-100 text-xs md:text-sm mt-1 md:mt-2 opacity-90 hidden sm:block">
-            Select locations directly. 100% Free Open Data.
-          </p>
+      <div className="w-full h-[50vh] md:h-full md:w-[400px] shrink-0 bg-white shadow-2xl z-20 flex flex-col relative overflow-hidden">
+        <div className="absolute inset-0 z-0 flex items-center justify-center opacity-[0.03] pointer-events-none">
+          <Route className="w-[150%] h-[150%] text-blue-900 -rotate-12" />
         </div>
 
-        <div className="p-4 md:p-6 flex-1 space-y-4 md:space-y-6">
+        <div className="py-2 px-3 md:py-2.5 md:px-4 bg-blue-600 text-white shrink-0 shadow-md relative z-20">
+          <div className="flex items-center space-x-2 w-full overflow-hidden">
+            {isGenerating && !errorMsg ? (
+              <>
+                <Loader2 className="w-4 h-4 text-blue-100 shrink-0 animate-spin" />
+                <div className="flex-1 overflow-hidden relative flex items-center">
+                  <div className="text-sm font-bold tracking-tight whitespace-nowrap">
+                    Calculating route...
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <Route className="w-4 h-4 text-blue-100 shrink-0" />
+                <div className="flex-1 overflow-hidden relative flex items-center" ref={headerContainerRef}>
+                  <div 
+                    ref={headerTextRef} 
+                    style={{ transform: `scale(${textScale})`, transformOrigin: 'left center' }}
+                    className="text-sm font-bold tracking-tight whitespace-nowrap transition-transform duration-200 flex items-center gap-1.5"
+                  >
+                    {hasRoute ? (
+                      <>
+                        <span>{routeMeta.start}</span>
+                        <ArrowRight className="w-3.5 h-3.5 opacity-75" />
+                        <span>{routeMeta.end}</span>
+                        <span className="font-normal opacity-80 ml-1">• {routePoints.length} waypoints</span>
+                      </>
+                    ) : (
+                      "GPX Generator"
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="p-4 md:p-6 flex-1 space-y-4 md:space-y-6 overflow-y-auto relative z-10">
           <div className="flex flex-col gap-3">
             {locations.map((loc, idx) => (
               <div key={idx} className="relative">
@@ -443,34 +511,37 @@ export default function App() {
               <label className="text-sm font-semibold text-gray-700">Travel Mode</label>
               <div className="grid grid-cols-3 gap-2">
                 <button
-                  onClick={() => setTravelMode('car')}
-                  className={`py-2 text-sm font-semibold rounded-lg transition-colors ${
-                    travelMode === 'car'
-                      ? 'bg-blue-600 text-white shadow-md'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  Car
-                </button>
-                <button
                   onClick={() => setTravelMode('foot')}
-                  className={`py-2 text-sm font-semibold rounded-lg transition-colors ${
+                  className={`py-1.5 px-1 text-sm font-semibold rounded-lg transition-colors flex flex-row items-center justify-center gap-1.5 ${
                     travelMode === 'foot'
                       ? 'bg-blue-600 text-white shadow-md'
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
-                  Walk
+                  <Footprints className="w-4 h-4" />
+                  <span>Walk</span>
+                </button>
+                <button
+                  onClick={() => setTravelMode('car')}
+                  className={`py-1.5 px-1 text-sm font-semibold rounded-lg transition-colors flex flex-row items-center justify-center gap-1.5 ${
+                    travelMode === 'car'
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  <Car className="w-4 h-4" />
+                  <span>Car</span>
                 </button>
                 <button
                   onClick={() => setTravelMode('train')}
-                  className={`py-2 text-sm font-semibold rounded-lg transition-colors ${
+                  className={`py-1.5 px-1 text-sm font-semibold rounded-lg transition-colors flex flex-row items-center justify-center gap-1.5 ${
                     travelMode === 'train'
                       ? 'bg-blue-600 text-white shadow-md'
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
-                  Train
+                  <Train className="w-4 h-4" />
+                  <span>Train</span>
                 </button>
               </div>
             </div>
@@ -482,15 +553,8 @@ export default function App() {
             </div>
           )}
 
-          {isGenerating && routePoints.length === 0 && !errorMsg && (
-            <div className="flex flex-col items-center justify-center p-8 space-y-3 text-blue-600">
-              <Loader2 className="animate-spin h-8 w-8" />
-              <p className="text-sm font-semibold">Calculating route...</p>
-            </div>
-          )}
-
           {routePoints.length > 0 && !isGenerating && (
-            <div className="mt-8 space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <div className="mt-8 pb-4 space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
               <button
                 onClick={handleDownload}
                 className="w-full flex justify-center items-center py-3 px-4 rounded-xl shadow-lg text-sm font-bold text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transform transition-all hover:-translate-y-0.5 active:translate-y-0"
@@ -498,19 +562,6 @@ export default function App() {
                 <FileDown className="-ml-1 mr-2 h-5 w-5" />
                 Download GPX
               </button>
-
-              <div className="p-4 bg-gray-50 rounded-lg border border-gray-100 relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-2 opacity-10">
-                  <Route className="w-16 h-16" />
-                </div>
-                <h3 className="font-semibold text-gray-900 flex items-center mb-2 relative z-10">
-                  <MapPin className="w-4 h-4 mr-1 text-blue-500" /> Route Found
-                </h3>
-                <p className="text-sm text-gray-600 relative z-10 font-medium">{routeName}</p>
-                <p className="text-xs text-gray-500 mt-2 relative z-10">
-                  Generated {routePoints.length} dense waypoints (&le;1km apart) for Fog of World.
-                </p>
-              </div>
             </div>
           )}
         </div>
@@ -545,9 +596,9 @@ export default function App() {
                   async dragend(e) {
                     const m = e.target;
                     const pos = m.getLatLng();
-                    const name = await reverseGeocode(pos.lat, pos.lng);
+                    const { name, shortName } = await reverseGeocode(pos.lat, pos.lng);
                     const newLocs = [...locations];
-                    newLocs[idx] = { lat: pos.lat, lng: pos.lng, name };
+                    newLocs[idx] = { lat: pos.lat, lng: pos.lng, name, shortName };
                     setLocations(newLocs);
                   }
                 }}
