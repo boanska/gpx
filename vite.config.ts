@@ -12,9 +12,9 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['favicon.png', 'apple-touch-icon.png', 'icon.svg', 'icon-maskable.svg', 'pwa-192x192.png', 'pwa-512x512.png', 'pwa-maskable-512x512.png'],
+        includeAssets: ['favicon.png', 'apple-touch-icon.png', 'icon.svg', 'icon-maskable.svg', 'pwa-192x192.png', 'pwa-maskable-192x192.png', 'pwa-512x512.png', 'pwa-maskable-512x512.png'],
         manifest: {
-          id: '/',
+          id: './',
           name: 'GPX generator by BOANSKA',
           short_name: 'GPX Generator',
           description: 'Generate and download GPX route files from map routes with Fog of World Dropbox import support.',
@@ -30,6 +30,12 @@ export default defineConfig(() => {
               sizes: '192x192',
               type: 'image/png',
               purpose: 'any',
+            },
+            {
+              src: 'pwa-maskable-192x192.png',
+              sizes: '192x192',
+              type: 'image/png',
+              purpose: 'maskable',
             },
             {
               src: 'pwa-512x512.png',

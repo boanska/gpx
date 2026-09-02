@@ -6,20 +6,12 @@ function renderIcon(size, isMaskable = false) {
   const canvas = createCanvas(size, size);
   const ctx = canvas.getContext('2d');
 
-  // Background Gradient
+  // Background Gradient - Full bleed for all icons as required by Android and iOS PWA standards
   const grad = ctx.createLinearGradient(0, 0, size, size);
   grad.addColorStop(0, '#3b82f6');
   grad.addColorStop(1, '#1d4ed8');
   ctx.fillStyle = grad;
-
-  if (isMaskable) {
-    ctx.fillRect(0, 0, size, size);
-  } else {
-    const radius = size * 0.2; // Smooth squircle corners
-    ctx.beginPath();
-    ctx.roundRect(0, 0, size, size, radius);
-    ctx.fill();
-  }
+  ctx.fillRect(0, 0, size, size);
 
   // Draw Route Icon
   // Original Lucide icon is in a 24x24 box:
@@ -28,8 +20,9 @@ function renderIcon(size, isMaskable = false) {
   // <circle cx="18" cy="5" r="3" />
 
   ctx.save();
-  // Safe zone scaling: slightly smaller for maskable to stay within safe circle when rotated
-  const iconSize = size * (isMaskable ? 0.54 : 0.62);
+  // Safe zone scaling: 0.48 for maskable (guarantees fitting inside 66% Android safe circle when rotated -12deg),
+  // 0.58 for any / apple-touch-icon
+  const iconSize = size * (isMaskable ? 0.48 : 0.58);
   const scale = iconSize / 24;
 
   // Center, rotate by -12deg (matching background -rotate-12), and center the 24x24 path
@@ -70,6 +63,7 @@ if (!fs.existsSync(publicDir)) {
 fs.writeFileSync(path.join(publicDir, 'pwa-512x512.png'), renderIcon(512, false));
 fs.writeFileSync(path.join(publicDir, 'pwa-maskable-512x512.png'), renderIcon(512, true));
 fs.writeFileSync(path.join(publicDir, 'pwa-192x192.png'), renderIcon(192, false));
+fs.writeFileSync(path.join(publicDir, 'pwa-maskable-192x192.png'), renderIcon(192, true));
 fs.writeFileSync(path.join(publicDir, 'apple-touch-icon.png'), renderIcon(180, false));
 fs.writeFileSync(path.join(publicDir, 'favicon.png'), renderIcon(64, false));
 
