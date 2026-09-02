@@ -1,0 +1,33 @@
+{
+  "id": "/",
+  "name": "GPX generator by BOANSKA",
+  "short_name": "GPX Generator",
+  "description": "Generate and download GPX route files from map routes with Fog of World Dropbox import support.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["fullscreen", "standalone", "minimal-ui"],
+  "theme_color": "#2563eb",
+  "background_color": "#2563eb",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, MutableRefObject } from 'react';
 import { MapContainer, TileLayer, Polyline, useMap, Marker, Tooltip, useMapEvents, LayerGroup } from 'react-leaflet';
-import { FileDown, Route, Loader2, MapPin, Search, Plus, Minus, X, ArrowRight, Footprints, Car, Train, Layers } from 'lucide-react';
+import { FileDown, Route, Loader2, MapPin, Search, Plus, Minus, X, ArrowRight, Footprints, Car, Train, Layers, Cloud } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -626,6 +626,18 @@ export default function App() {
     setLocations(newLocs);
   };
 
+  const handleOpenDropbox = () => {
+    try {
+      if (window.top && window.top !== window) {
+        window.top.location.href = "https://www.dropbox.com/home/Apps/Fog%20of%20World/Import";
+        return;
+      }
+    } catch {
+      // In case of cross-origin iframe security restrictions
+    }
+    window.location.href = "https://www.dropbox.com/home/Apps/Fog%20of%20World/Import";
+  };
+
   const handleDownload = () => {
     if (routePoints.length === 0) return;
     const modeStr = travelMode === 'foot' ? 'walk' : travelMode;
@@ -694,13 +706,26 @@ export default function App() {
             </div>
 
             {hasRoute && (
-              <button
-                onClick={handleDownload}
-                className="shrink-0 bg-white/10 hover:bg-white/20 text-white p-1.5 rounded-lg transition-colors flex items-center justify-center"
-                title="Download GPX"
-              >
-                <FileDown className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  id="dropbox-import-btn"
+                  onClick={handleOpenDropbox}
+                  className="shrink-0 bg-white/10 hover:bg-white/20 text-white p-1.5 rounded-lg transition-colors flex items-center justify-center"
+                  title="Open Fog of World Import Folder in Dropbox"
+                  aria-label="Open Fog of World Import Folder in Dropbox"
+                >
+                  <Cloud className="w-5 h-5" />
+                </button>
+                <button
+                  id="download-gpx-btn"
+                  onClick={handleDownload}
+                  className="shrink-0 bg-white/10 hover:bg-white/20 text-white p-1.5 rounded-lg transition-colors flex items-center justify-center"
+                  title="Download GPX"
+                  aria-label="Download GPX"
+                >
+                  <FileDown className="w-5 h-5" />
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -797,12 +822,12 @@ export default function App() {
           )}
         </div>
 
-        <div className="w-full text-center py-1 bg-white/80 backdrop-blur-sm shrink-0 relative z-20">
+        <div className="w-full text-center py-1.5 bg-transparent shrink-0 relative z-20 pointer-events-none">
           <a 
             href="https://github.com/boanska" 
             target="_blank" 
             rel="noopener noreferrer"
-            className="text-[11px] text-gray-400 hover:text-blue-500 transition-colors block"
+            className="text-[11px] text-gray-400 hover:text-blue-500 transition-colors inline-block pointer-events-auto"
           >
             &copy; github.com/boanska
           </a>
