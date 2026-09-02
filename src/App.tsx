@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, MutableRefObject } from 'react';
+import { useState, useEffect, useRef, useMemo, MutableRefObject } from 'react';
 import { MapContainer, TileLayer, Polyline, useMap, Marker, Tooltip, useMapEvents, LayerGroup } from 'react-leaflet';
 import { FileDown, Route, Loader2, MapPin, Search, Plus, Minus, X, ArrowRight, Footprints, Car, Train, Layers, Cloud } from 'lucide-react';
 import L from 'leaflet';
@@ -500,7 +500,21 @@ export default function App() {
   });
 
   const hasRoute = routePoints.length > 0 && !isGenerating;
-  const headerTitle = hasRoute ? `${routeMeta.start} → ${routeMeta.end} • ${routePoints.length} waypoints` : "GPX Generator";
+
+  const routeDistanceKm = useMemo(() => {
+    if (routePoints.length < 2) return 0;
+    let total = 0;
+    for (let i = 1; i < routePoints.length; i++) {
+      total += haversineDistance(routePoints[i-1].lat, routePoints[i-1].lng, routePoints[i].lat, routePoints[i].lng);
+    }
+    return total;
+  }, [routePoints]);
+
+  const formattedDistance = routeDistanceKm < 10 
+    ? `${routeDistanceKm.toFixed(1)} km` 
+    : `${Math.round(routeDistanceKm)} km`;
+
+  const headerTitle = hasRoute ? `${routeMeta.start} → ${routeMeta.end} • ${formattedDistance}` : "GPX Generator";
 
   const headerContainerRef = useRef<HTMLDivElement>(null);
   const headerTextRef = useRef<HTMLDivElement>(null);
@@ -668,9 +682,9 @@ export default function App() {
           <Route className="w-[150%] h-[150%] text-blue-900 -rotate-12" />
         </div>
 
-        <div className="py-2 px-3 md:py-2.5 md:px-4 bg-blue-600 text-white shrink-0 shadow-md sticky top-0 z-50">
-          <div className="flex items-center justify-between gap-2 w-full">
-            <div className="flex items-center space-x-2 flex-1 overflow-hidden">
+        <div className="py-2 px-3 md:py-2.5 md:px-4 bg-blue-600 text-white shrink-0 shadow-md sticky top-0 z-50 min-h-[48px] md:min-h-[52px] flex items-center">
+          <div className="flex items-center justify-between gap-2 w-full min-h-[32px]">
+            <div className="flex items-center space-x-2 flex-1 overflow-hidden min-h-[32px]">
               {isGenerating && !errorMsg ? (
                 <>
                   <Loader2 className="w-4 h-4 text-blue-100 shrink-0 animate-spin" />
@@ -692,9 +706,9 @@ export default function App() {
                       {hasRoute ? (
                         <>
                           <span>{routeMeta.start}</span>
-                          <ArrowRight className="w-3.5 h-3.5 opacity-75" />
+                          <ArrowRight className="w-3.5 h-3.5 opacity-75 shrink-0" />
                           <span>{routeMeta.end}</span>
-                          <span className="font-normal opacity-80 ml-1">• {routePoints.length} waypoints</span>
+                          <span className="font-normal opacity-80 ml-1 shrink-0">• {formattedDistance}</span>
                         </>
                       ) : (
                         "GPX Generator"
