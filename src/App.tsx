@@ -745,33 +745,33 @@ export default function App() {
         </div>
 
         <div className="p-3 md:p-6 shrink min-h-0 space-y-3 md:space-y-6 overflow-y-auto relative z-10 flex flex-col">
-          <div className="relative flex items-center">
-            <div className="flex-1 flex flex-col gap-3 min-w-0">
-              {locations.map((loc, idx) => (
-                <div key={idx} className="relative">
-                  <LocationSearch 
-                    label={idx === 0 ? "Starting Point" : idx === locations.length - 1 ? "Destination" : `Stop ${idx}`} 
-                    placeholder="(or click map)" 
-                    location={loc}
-                    onSelect={(newLoc) => {
-                      disableAutoFit.current = false;
-                      const newLocs = [...locations];
-                      newLocs[idx] = newLoc;
-                      setLocations(newLocs);
-                    }}
-                    onMultiSelect={(newLocs) => {
-                      disableAutoFit.current = false;
-                      setLocations(newLocs);
-                    }}
-                    onRemove={locations.length > 2 ? () => {
-                      disableAutoFit.current = true;
-                      const newLocs = [...locations];
-                      newLocs.splice(idx, 1);
-                      setLocations(newLocs);
-                    } : undefined}
-                  />
-                  
-                  {idx < locations.length - 1 && (
+          <div className="flex flex-col gap-3">
+            {locations.map((loc, idx) => (
+              <div key={idx} className="relative">
+                <LocationSearch 
+                  label={idx === 0 ? "Starting Point" : idx === locations.length - 1 ? "Destination" : `Stop ${idx}`} 
+                  placeholder="(or click map)" 
+                  location={loc}
+                  onSelect={(newLoc) => {
+                    disableAutoFit.current = false;
+                    const newLocs = [...locations];
+                    newLocs[idx] = newLoc;
+                    setLocations(newLocs);
+                  }}
+                  onMultiSelect={(newLocs) => {
+                    disableAutoFit.current = false;
+                    setLocations(newLocs);
+                  }}
+                  onRemove={locations.length > 2 ? () => {
+                    disableAutoFit.current = true;
+                    const newLocs = [...locations];
+                    newLocs.splice(idx, 1);
+                    setLocations(newLocs);
+                  } : undefined}
+                />
+                
+                {idx < locations.length - 1 && (
+                  <>
                     <button
                       id={`add-stop-btn-${idx}`}
                       type="button"
@@ -787,26 +787,26 @@ export default function App() {
                     >
                       <Plus className="w-4 h-4" />
                     </button>
-                  )}
-                </div>
-              ))}
-            </div>
 
-            {locations.length === 2 && (
-              <button
-                id="reverse-route-btn"
-                type="button"
-                onClick={() => {
-                  disableAutoFit.current = false;
-                  setLocations([locations[1], locations[0]]);
-                }}
-                className="ml-2.5 -mr-1 p-1 text-gray-700 hover:text-blue-600 active:scale-90 transition-all flex items-center justify-center cursor-pointer shrink-0"
-                title="Reverse route"
-                aria-label="Reverse route"
-              >
-                <ArrowUpDown className="w-5 h-5 stroke-[2.2]" />
-              </button>
-            )}
+                    {locations.length === 2 && (
+                      <button
+                        id="reverse-route-btn"
+                        type="button"
+                        onClick={() => {
+                          disableAutoFit.current = false;
+                          setLocations([locations[1], locations[0]]);
+                        }}
+                        className="absolute right-3 top-full mt-[18px] -translate-y-1/2 text-gray-500 hover:text-blue-600 transition-all active:scale-90 z-10 p-1 flex items-center justify-center"
+                        title="Reverse route"
+                        aria-label="Reverse route"
+                      >
+                        <ArrowUpDown className="w-4 h-4" />
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            ))}
           </div>
 
           <div className="space-y-3 shrink-0">
