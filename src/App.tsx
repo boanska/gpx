@@ -111,38 +111,63 @@ async function getRoute(locations: {lat: number, lng: number}[], mode: string) {
     }
     throw new Error(`Car route not found. Try a different location.`);
   } else if (mode === 'foot') {
+    // 1. Try OSM routed-foot (dedicated pedestrian engine with sidewalks, crosswalks, stairs, footways)
     try {
       const coords = locations.map(l => `${l.lng},${l.lat}`).join(';');
-      const url = `https://router.project-osrm.org/route/v1/foot/${coords}?overview=full&geometries=geojson`;
+      const url = `https://routing.openstreetmap.de/routed-foot/route/v1/foot/${coords}?overview=full&geometries=geojson`;
       const res = await fetch(url);
-      const text = await res.text();
-      const data = JSON.parse(text);
-      if (data.code === 'Ok' && data.routes.length > 0) {
-        const coords = data.routes[0].geometry.coordinates;
-        return coords.map((c: number[]) => ({ lat: c[1], lng: c[0] }));
+      if (res.ok) {
+        const text = await res.text();
+        const data = JSON.parse(text);
+        if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+          const coords = data.routes[0].geometry.coordinates;
+          return coords.map((c: number[]) => ({ lat: c[1], lng: c[0] }));
+        }
       }
     } catch (e) {
-      console.warn("OSRM foot failed, falling back to BRouter shortest", e);
+      console.warn("OSM routed-foot failed, trying BRouter hiking-beta", e);
     }
 
+    // 2. Fallback to BRouter hiking-beta (specialized in walking, footways, stairs, pedestrian paths)
     const brouterCoords = locations.map(l => `${l.lng},${l.lat}`).join('|');
-    const brouterUrl = `https://brouter.de/brouter?lonlats=${brouterCoords}&profile=shortest&format=geojson`;
-    const res = await fetch(brouterUrl);
-    const text = await res.text();
-    let data;
     try {
-      data = JSON.parse(text);
-    } catch (e) {
-      if (text.includes('thread-priority-watchdog')) {
-        throw new Error(`The walking distance is too long to calculate. Please try a shorter route or add more stops.`);
+      const brouterUrl = `https://brouter.de/brouter?lonlats=${brouterCoords}&profile=hiking-beta&format=geojson`;
+      const res = await fetch(brouterUrl);
+      if (res.ok) {
+        const text = await res.text();
+        const data = JSON.parse(text);
+        if (data.features && data.features.length > 0) {
+          const coords = data.features[0].geometry.coordinates;
+          return coords.map((c: number[]) => ({ lat: c[1], lng: c[0] }));
+        }
       }
-      throw new Error(`Walking route not found. Server returned: ${text.slice(0, 50)}...`);
+    } catch (e) {
+      console.warn("BRouter hiking-beta failed, trying hiking-mountain", e);
     }
-    if (data.features && data.features.length > 0) {
-      const coords = data.features[0].geometry.coordinates;
-      return coords.map((c: number[]) => ({ lat: c[1], lng: c[0] }));
+
+    // 3. Fallback to BRouter hiking-mountain
+    try {
+      const brouterUrl = `https://brouter.de/brouter?lonlats=${brouterCoords}&profile=hiking-mountain&format=geojson`;
+      const res = await fetch(brouterUrl);
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        if (text.includes('thread-priority-watchdog')) {
+          throw new Error(`The walking distance is too long to calculate. Please try a shorter route or add more stops.`);
+        }
+        throw new Error(`Walking route not found. Server returned: ${text.slice(0, 50)}...`);
+      }
+      if (data.features && data.features.length > 0) {
+        const coords = data.features[0].geometry.coordinates;
+        return coords.map((c: number[]) => ({ lat: c[1], lng: c[0] }));
+      }
+    } catch (e: any) {
+      if (e?.message) throw e;
     }
-    throw new Error(`Walking route not found.`);
+
+    throw new Error(`Walking route not found. Try adding an intermediate stop.`);
 
   } else if (mode === 'train') {
     const coords = locations.map(l => `${l.lng},${l.lat}`).join('|');
