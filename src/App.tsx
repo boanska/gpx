@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, MutableRefObject } from 'react';
 import { MapContainer, TileLayer, Polyline, useMap, Marker, Tooltip, useMapEvents, LayerGroup } from 'react-leaflet';
-import { FileDown, Route, Loader2, MapPin, Search, Plus, Minus, X, ArrowRight, Footprints, Car, Train, Layers, Cloud } from 'lucide-react';
+import { FileDown, Route, Loader2, MapPin, Search, Plus, Minus, X, ArrowRight, ArrowUpDown, Footprints, Car, Train, Layers, Cloud } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -771,18 +771,39 @@ export default function App() {
                 />
                 
                 {idx < locations.length - 1 && (
-                  <button
-                    onClick={() => {
-                      disableAutoFit.current = true;
-                      const newLocs = [...locations];
-                      newLocs.splice(idx + 1, 0, null);
-                      setLocations(newLocs);
-                    }}
-                    className="absolute left-1/2 -translate-x-1/2 top-full mt-[18px] -translate-y-1/2 bg-white border border-gray-200 text-gray-500 hover:text-blue-600 hover:border-blue-400 rounded-full p-0.5 shadow-sm transition-colors z-10"
-                    title="Add stop here"
-                  >
-                    <Plus className="w-4 h-4" />
-                  </button>
+                  <>
+                    <button
+                      id={`add-stop-btn-${idx}`}
+                      type="button"
+                      onClick={() => {
+                        disableAutoFit.current = true;
+                        const newLocs = [...locations];
+                        newLocs.splice(idx + 1, 0, null);
+                        setLocations(newLocs);
+                      }}
+                      className="absolute left-1/2 -translate-x-1/2 top-full mt-[18px] -translate-y-1/2 bg-white border border-gray-200 text-gray-500 hover:text-blue-600 hover:border-blue-400 rounded-full p-0.5 shadow-sm transition-colors z-10"
+                      title="Add stop here"
+                      aria-label="Add stop here"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+
+                    {locations.length === 2 && (
+                      <button
+                        id="reverse-route-btn"
+                        type="button"
+                        onClick={() => {
+                          disableAutoFit.current = false;
+                          setLocations([locations[1], locations[0]]);
+                        }}
+                        className="absolute right-3 top-full mt-[18px] -translate-y-1/2 bg-white border border-gray-200 text-gray-600 hover:text-blue-600 hover:border-blue-400 rounded-full p-1 shadow-sm transition-all active:scale-90 z-10 flex items-center justify-center group"
+                        title="Reverse route"
+                        aria-label="Reverse route"
+                      >
+                        <ArrowUpDown className="w-4 h-4 transition-transform group-hover:scale-110 duration-200" />
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             ))}
