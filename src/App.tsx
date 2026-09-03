@@ -412,6 +412,7 @@ function LocationSearch({
           type="text"
           placeholder={placeholder}
           value={query}
+          title={query || placeholder}
           onChange={e => {
             setQuery(e.target.value);
             onSelect(null);
@@ -419,13 +420,13 @@ function LocationSearch({
           onFocus={() => {
             if (results.length > 0) setIsOpen(true);
           }}
-          className="block w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+          className={`block w-full pl-9 ${onRemove ? 'pr-7' : 'pr-3'} py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm`}
         />
         {onRemove && (
           <button
             type="button"
             onClick={onRemove}
-            className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-red-500 transition-colors"
+            className="absolute inset-y-0 right-0 pr-2 flex items-center text-gray-400 hover:text-red-500 transition-colors"
           >
             <X className="h-4 w-4" />
           </button>
