@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, MutableRefObject } from 'react';
 import { MapContainer, TileLayer, Polyline, useMap, Marker, Tooltip, useMapEvents, LayerGroup } from 'react-leaflet';
-import { FileDown, Route, Loader2, MapPin, Search, Plus, Minus, X, ArrowRight, ArrowUpDown, Footprints, Car, Train, Layers, Cloud } from 'lucide-react';
+import { FileDown, Route, Loader2, MapPin, Search, Plus, Minus, X, ArrowRight, ArrowUpDown, Footprints, Car, Train, Layers, Cloud, Bike, Navigation } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -75,121 +75,150 @@ function generateGpx(points: {lat: number, lng: number}[], routeName: string) {
   return gpx;
 }
 
+async function getRouteSegment(start: {lat: number, lng: number}, end: {lat: number, lng: number}, mode: string) {
+  const coordsStrOSM = `${start.lng},${start.lat};${end.lng},${end.lat}`;
+  const coordsStrBRouter = `${start.lng},${start.lat}|${end.lng},${end.lat}`;
+
+  if (mode === 'car') {
+    try {
+      const brouterUrl = `https://brouter.de/brouter?lonlats=${coordsStrBRouter}&profile=car-eco&format=geojson`;
+      const res = await fetch(brouterUrl);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.features && data.features.length > 0) {
+          return data.features[0].geometry.coordinates.map((c: number[]) => ({ lat: c[1], lng: c[0] }));
+        }
+      }
+    } catch (e) {}
+
+    const url = `https://router.project-osrm.org/route/v1/driving/${coordsStrOSM}?overview=full&geometries=geojson`;
+    const res = await fetch(url);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+        return data.routes[0].geometry.coordinates.map((c: number[]) => ({ lat: c[1], lng: c[0] }));
+      }
+    }
+    throw new Error(`Car route not found between stops.`);
+  } else if (mode === 'bike') {
+    try {
+      const brouterUrl = `https://brouter.de/brouter?lonlats=${coordsStrBRouter}&profile=trekking&format=geojson`;
+      const res = await fetch(brouterUrl);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.features && data.features.length > 0) {
+          return data.features[0].geometry.coordinates.map((c: number[]) => ({ lat: c[1], lng: c[0] }));
+        }
+      }
+    } catch (e) {}
+
+    const url = `https://routing.openstreetmap.de/routed-bike/route/v1/driving/${coordsStrOSM}?overview=full&geometries=geojson`;
+    const res = await fetch(url);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+        return data.routes[0].geometry.coordinates.map((c: number[]) => ({ lat: c[1], lng: c[0] }));
+      }
+    }
+    throw new Error(`Bike route not found between stops.`);
+  } else if (mode === 'foot') {
+    try {
+      const url = `https://routing.openstreetmap.de/routed-foot/route/v1/foot/${coordsStrOSM}?overview=full&geometries=geojson`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+          return data.routes[0].geometry.coordinates.map((c: number[]) => ({ lat: c[1], lng: c[0] }));
+        }
+      }
+    } catch (e) {}
+
+    try {
+      const brouterUrl = `https://brouter.de/brouter?lonlats=${coordsStrBRouter}&profile=hiking-beta&format=geojson`;
+      const res = await fetch(brouterUrl);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.features && data.features.length > 0) {
+          return data.features[0].geometry.coordinates.map((c: number[]) => ({ lat: c[1], lng: c[0] }));
+        }
+      }
+    } catch (e) {}
+
+    try {
+      const brouterUrl = `https://brouter.de/brouter?lonlats=${coordsStrBRouter}&profile=hiking-mountain&format=geojson`;
+      const res = await fetch(brouterUrl);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.features && data.features.length > 0) {
+          return data.features[0].geometry.coordinates.map((c: number[]) => ({ lat: c[1], lng: c[0] }));
+        }
+      }
+    } catch (e) {}
+    
+    throw new Error(`Walking route not found between stops.`);
+  } else if (mode === 'train') {
+    try {
+      const url = `https://brouter.de/brouter?lonlats=${coordsStrBRouter}&profile=rail&format=geojson`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.features && data.features.length > 0) {
+          return data.features[0].geometry.coordinates.map((c: number[]) => ({ lat: c[1], lng: c[0] }));
+        }
+      }
+    } catch (e) {}
+    throw new Error(`Train route not found between stops.`);
+  }
+  
+  return [];
+}
+
 async function getRoute(locations: {lat: number, lng: number}[], mode: string) {
   if (locations.length < 2) return [];
 
-  if (mode === 'car') {
-    // Try BRouter 'car-eco' first for a balanced, more direct route
-    try {
-      const brouterCoords = locations.map(l => `${l.lng},${l.lat}`).join('|');
-      const brouterUrl = `https://brouter.de/brouter?lonlats=${brouterCoords}&profile=car-eco&format=geojson`;
-      const res = await fetch(brouterUrl);
-      const text = await res.text();
-      const data = JSON.parse(text);
-      if (data.features && data.features.length > 0) {
-        const coords = data.features[0].geometry.coordinates;
-        return coords.map((c: number[]) => ({ lat: c[1], lng: c[0] }));
-      }
-    } catch (e) {
-      console.warn("BRouter car-fast failed, falling back to OSRM", e);
-    }
-
-    // Fallback to OSRM if BRouter fails (e.g., watchdog timeout on massive routes)
-    const coords = locations.map(l => `${l.lng},${l.lat}`).join(';');
-    const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`;
-    const res = await fetch(url);
-    const text = await res.text();
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch (e) {
-      throw new Error(`Failed to parse routing data. Server returned: ${text.slice(0, 50)}...`);
-    }
-    if (data.code === 'Ok' && data.routes.length > 0) {
-      const coords = data.routes[0].geometry.coordinates;
-      return coords.map((c: number[]) => ({ lat: c[1], lng: c[0] }));
-    }
-    throw new Error(`Car route not found. Try a different location.`);
-  } else if (mode === 'foot') {
-    // 1. Try OSM routed-foot (dedicated pedestrian engine with sidewalks, crosswalks, stairs, footways)
-    try {
-      const coords = locations.map(l => `${l.lng},${l.lat}`).join(';');
-      const url = `https://routing.openstreetmap.de/routed-foot/route/v1/foot/${coords}?overview=full&geometries=geojson`;
-      const res = await fetch(url);
-      if (res.ok) {
-        const text = await res.text();
-        const data = JSON.parse(text);
-        if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
-          const coords = data.routes[0].geometry.coordinates;
-          return coords.map((c: number[]) => ({ lat: c[1], lng: c[0] }));
-        }
-      }
-    } catch (e) {
-      console.warn("OSM routed-foot failed, trying BRouter hiking-beta", e);
-    }
-
-    // 2. Fallback to BRouter hiking-beta (specialized in walking, footways, stairs, pedestrian paths)
-    const brouterCoords = locations.map(l => `${l.lng},${l.lat}`).join('|');
-    try {
-      const brouterUrl = `https://brouter.de/brouter?lonlats=${brouterCoords}&profile=hiking-beta&format=geojson`;
-      const res = await fetch(brouterUrl);
-      if (res.ok) {
-        const text = await res.text();
-        const data = JSON.parse(text);
-        if (data.features && data.features.length > 0) {
-          const coords = data.features[0].geometry.coordinates;
-          return coords.map((c: number[]) => ({ lat: c[1], lng: c[0] }));
-        }
-      }
-    } catch (e) {
-      console.warn("BRouter hiking-beta failed, trying hiking-mountain", e);
-    }
-
-    // 3. Fallback to BRouter hiking-mountain
-    try {
-      const brouterUrl = `https://brouter.de/brouter?lonlats=${brouterCoords}&profile=hiking-mountain&format=geojson`;
-      const res = await fetch(brouterUrl);
-      const text = await res.text();
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch (e) {
-        if (text.includes('thread-priority-watchdog')) {
-          throw new Error(`The walking distance is too long to calculate. Please try a shorter route or add more stops.`);
-        }
-        throw new Error(`Walking route not found. Server returned: ${text.slice(0, 50)}...`);
-      }
-      if (data.features && data.features.length > 0) {
-        const coords = data.features[0].geometry.coordinates;
-        return coords.map((c: number[]) => ({ lat: c[1], lng: c[0] }));
-      }
-    } catch (e: any) {
-      if (e?.message) throw e;
-    }
-
-    throw new Error(`Walking route not found. Try adding an intermediate stop.`);
-
-  } else if (mode === 'train') {
-    const coords = locations.map(l => `${l.lng},${l.lat}`).join('|');
-    const url = `https://brouter.de/brouter?lonlats=${coords}&profile=rail&format=geojson`;
-    const res = await fetch(url);
-    const text = await res.text();
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch (e) {
-      if (text.includes('thread-priority-watchdog')) {
-        throw new Error(`The train distance is too long to calculate. Please try a shorter route or add more stops.`);
-      }
-      throw new Error(`Train route not found. Server returned: ${text.slice(0, 50)}...`);
-    }
-    if (data.features && data.features.length > 0) {
-      const coords = data.features[0].geometry.coordinates;
-      return coords.map((c: number[]) => ({ lat: c[1], lng: c[0] }));
-    }
-    throw new Error(`Train route not found.`);
+  if (mode === 'direct') {
+    return locations.map(l => ({ lat: l.lat, lng: l.lng }));
   }
-  throw new Error("Invalid travel mode.");
+
+  const segmentPromises = [];
+  for (let i = 0; i < locations.length - 1; i++) {
+    segmentPromises.push(getRouteSegment(locations[i], locations[i+1], mode));
+  }
+  
+  const segments = await Promise.all(segmentPromises);
+  const path: {lat: number, lng: number}[] = [];
+  
+  for (let i = 0; i < locations.length - 1; i++) {
+    const startLoc = locations[i];
+    const endLoc = locations[i+1];
+    const segment = segments[i];
+    
+    if (segment.length > 0) {
+      // Connect to start marker
+      if (haversineDistance(startLoc.lat, startLoc.lng, segment[0].lat, segment[0].lng) > 0.005) {
+        segment.unshift({ lat: startLoc.lat, lng: startLoc.lng });
+      }
+      // Connect to end marker
+      const lastPt = segment[segment.length - 1];
+      if (haversineDistance(endLoc.lat, endLoc.lng, lastPt.lat, lastPt.lng) > 0.005) {
+        segment.push({ lat: endLoc.lat, lng: endLoc.lng });
+      }
+    } else {
+      segment.push({ lat: startLoc.lat, lng: startLoc.lng });
+      segment.push({ lat: endLoc.lat, lng: endLoc.lng });
+    }
+    
+    if (i > 0 && path.length > 0 && segment.length > 0) {
+      const lastPath = path[path.length - 1];
+      const firstSeg = segment[0];
+      if (haversineDistance(lastPath.lat, lastPath.lng, firstSeg.lat, firstSeg.lng) < 0.001) {
+        segment.shift();
+      }
+    }
+    path.push(...segment);
+  }
+  
+  return path;
 }
 
 function MapUpdater({ points, disableAutoFit }: { points: {lat: number, lng: number}[], disableAutoFit: MutableRefObject<boolean> }) {
@@ -496,7 +525,7 @@ export default function App() {
     return [null, null];
   });
   
-  const [travelMode, setTravelMode] = useState<'car' | 'train' | 'foot'>(() => {
+  const [travelMode, setTravelMode] = useState<'car' | 'bike' | 'foot' | 'train' | 'direct'>(() => {
     return (localStorage.getItem('gpx_travelMode') as any) || 'car';
   });
   
@@ -838,10 +867,10 @@ export default function App() {
           <div className="space-y-3 shrink-0">
             <div className="space-y-1">
               <label className="text-sm font-semibold text-gray-700">Travel Mode</label>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => setTravelMode('foot')}
-                  className={`py-1.5 px-1 text-sm font-semibold rounded-lg transition-colors flex flex-row items-center justify-center gap-1.5 ${
+                  className={`flex-1 min-w-[70px] py-1.5 px-1 text-sm font-semibold rounded-lg transition-colors flex flex-row items-center justify-center gap-1.5 ${
                     travelMode === 'foot'
                       ? 'bg-blue-600 text-white shadow-md'
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -851,8 +880,19 @@ export default function App() {
                   <span>Walk</span>
                 </button>
                 <button
+                  onClick={() => setTravelMode('bike')}
+                  className={`flex-1 min-w-[70px] py-1.5 px-1 text-sm font-semibold rounded-lg transition-colors flex flex-row items-center justify-center gap-1.5 ${
+                    travelMode === 'bike'
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  <Bike className="w-4 h-4" />
+                  <span>Bike</span>
+                </button>
+                <button
                   onClick={() => setTravelMode('car')}
-                  className={`py-1.5 px-1 text-sm font-semibold rounded-lg transition-colors flex flex-row items-center justify-center gap-1.5 ${
+                  className={`flex-1 min-w-[70px] py-1.5 px-1 text-sm font-semibold rounded-lg transition-colors flex flex-row items-center justify-center gap-1.5 ${
                     travelMode === 'car'
                       ? 'bg-blue-600 text-white shadow-md'
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -863,7 +903,7 @@ export default function App() {
                 </button>
                 <button
                   onClick={() => setTravelMode('train')}
-                  className={`py-1.5 px-1 text-sm font-semibold rounded-lg transition-colors flex flex-row items-center justify-center gap-1.5 ${
+                  className={`flex-1 min-w-[70px] py-1.5 px-1 text-sm font-semibold rounded-lg transition-colors flex flex-row items-center justify-center gap-1.5 ${
                     travelMode === 'train'
                       ? 'bg-blue-600 text-white shadow-md'
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -871,6 +911,17 @@ export default function App() {
                 >
                   <Train className="w-4 h-4" />
                   <span>Train</span>
+                </button>
+                <button
+                  onClick={() => setTravelMode('direct')}
+                  className={`flex-1 min-w-[70px] py-1.5 px-1 text-sm font-semibold rounded-lg transition-colors flex flex-row items-center justify-center gap-1.5 ${
+                    travelMode === 'direct'
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  <Navigation className="w-4 h-4" />
+                  <span>Direct</span>
                 </button>
               </div>
             </div>
