@@ -929,11 +929,13 @@ export default function App() {
           
           {locations.map((loc, idx) => {
             if (!loc) return null;
+            const hasMultipleIntermediateStops = locations.length > 3;
             return (
               <Marker 
                 key={idx}
                 position={[loc.lat, loc.lng]} 
                 draggable={true}
+                title={idx === 0 ? "Starting Point" : idx === locations.length - 1 ? "Destination" : `Stop ${idx}`}
                 icon={L.divIcon({
                   html: idx === 0 
                     ? `<div class="relative w-8 h-10 flex flex-col items-center">
@@ -951,9 +953,11 @@ export default function App() {
                          </div>
                          <div class="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[8px] border-t-white absolute bottom-0.5"></div>
                        </div>`
-                    : `<div class="relative w-6 h-6 flex flex-col items-center justify-center">
-                         <div class="absolute top-1 w-5 h-5 bg-black/30 blur-[2px] rounded-full"></div>
-                         <div class="w-5 h-5 bg-white rounded-full border-[3px] border-gray-400 relative z-10"></div>
+                    : `<div class="relative w-6 h-6 flex items-center justify-center">
+                         <div class="absolute top-0.5 w-5 h-5 bg-black/25 blur-[2px] rounded-full"></div>
+                         <div class="w-6 h-6 bg-white rounded-full border-2 border-gray-400 shadow-sm flex items-center justify-center relative z-10 select-none text-[12px] font-normal text-gray-500 leading-none" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 12px; font-weight: 400; color: #6b7280; line-height: 1;">
+                           ${hasMultipleIntermediateStops ? idx : ''}
+                         </div>
                        </div>`,
                   className: '',
                   iconSize: idx === 0 || idx === locations.length - 1 ? [32, 40] : [24, 24],
