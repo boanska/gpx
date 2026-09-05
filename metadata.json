@@ -1,6 +1,6 @@
 {
   "name": "GPX generator by BOANSKA",
-  "description": "Generate and download GPX route files from map routes with Fog of World Dropbox import support.",
+  "description": "GPX generator for Fog of World",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
