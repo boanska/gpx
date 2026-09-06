@@ -1,8 +1,61 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import {defineConfig} from 'vite';
+import {defineConfig, Plugin} from 'vite';
 import {VitePWA} from 'vite-plugin-pwa';
+
+function tracestrackProxyPlugin(): Plugin {
+  const handler = async (req: any, res: any, next: any) => {
+    const match = req.url?.match(/^\/api\/tiles\/topo\/(\d+)\/(\d+)\/(\d+)\.webp/);
+    if (match) {
+      const [, z, x, y] = match;
+      const targetUrl = `https://tile.tracestrack.com/topo__/${z}/${x}/${y}.webp?key=383118983d4a867dd2d367451720d724`;
+      try {
+        const tileRes = await fetch(targetUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Referer': 'https://www.openstreetmap.org/',
+          },
+        });
+        if (tileRes.ok) {
+          res.setHeader('Content-Type', 'image/webp');
+          res.setHeader('Cache-Control', 'public, max-age=86400');
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          const arrayBuf = await tileRes.arrayBuffer();
+          res.end(Buffer.from(arrayBuf));
+          return;
+        }
+
+        // Fallback to OpenTopoMap
+        const fallbackUrl = `https://a.tile.opentopomap.org/${z}/${x}/${y}.png`;
+        const fallbackRes = await fetch(fallbackUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0' },
+        });
+        if (fallbackRes.ok) {
+          res.setHeader('Content-Type', 'image/png');
+          res.setHeader('Cache-Control', 'public, max-age=86400');
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          const arrayBuf = await fallbackRes.arrayBuffer();
+          res.end(Buffer.from(arrayBuf));
+          return;
+        }
+      } catch (e) {
+        // pass to next
+      }
+    }
+    next();
+  };
+
+  return {
+    name: 'tracestrack-topo-proxy',
+    configureServer(server) {
+      server.middlewares.use(handler);
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(handler);
+    },
+  };
+}
 
 export default defineConfig(() => {
   return {
@@ -10,6 +63,7 @@ export default defineConfig(() => {
     plugins: [
       react(),
       tailwindcss(),
+      tracestrackProxyPlugin(),
       VitePWA({
         registerType: 'autoUpdate',
         includeAssets: ['favicon.png', 'apple-touch-icon.png', 'icon.svg', 'icon-maskable.svg', 'pwa-192x192.png', 'pwa-maskable-192x192.png', 'pwa-512x512.png', 'pwa-maskable-512x512.png'],

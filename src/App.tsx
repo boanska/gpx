@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, MutableRefObject } from 'react';
-import { MapContainer, TileLayer, Polyline, useMap, Marker, Tooltip, useMapEvents, LayerGroup } from 'react-leaflet';
+import { MapContainer, TileLayer, Polyline, useMap, Marker, Tooltip, useMapEvents } from 'react-leaflet';
 import { FileDown, Route, Loader2, MapPin, Search, Plus, Minus, X, ArrowRight, ArrowUpDown, Footprints, Car, Train, Layers, Cloud } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -507,7 +507,7 @@ export default function App() {
   
   const mapClickGuard = useRef(0);
   const disableAutoFit = useRef(true);
-  const [activeLayer, setActiveLayer] = useState<'street' | 'hybrid' | 'satellite'>('street');
+  const [activeLayer, setActiveLayer] = useState<'street' | 'satellite' | 'topo'>('street');
   const layersControlRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -904,19 +904,12 @@ export default function App() {
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
           )}
-          {activeLayer === 'hybrid' && (
-            <LayerGroup>
-              <TileLayer
-                attribution='Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
-                url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-              />
-              <TileLayer
-                url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}"
-              />
-              <TileLayer
-                url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
-              />
-            </LayerGroup>
+          {activeLayer === 'topo' && (
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors. Tiles courtesy of <a href="https://www.tracestrack.com/" target="_blank" rel="noopener noreferrer">Tracestrack Maps</a>'
+              url="/api/tiles/topo/{z}/{x}/{y}.webp"
+              maxZoom={19}
+            />
           )}
           {activeLayer === 'satellite' && (
             <TileLayer
@@ -997,7 +990,7 @@ export default function App() {
           <button 
             onClick={() => {
               if (activeLayer === 'street') setActiveLayer('satellite');
-              else if (activeLayer === 'satellite') setActiveLayer('hybrid');
+              else if (activeLayer === 'satellite') setActiveLayer('topo');
               else setActiveLayer('street');
             }}
             className="w-10 h-10 bg-white rounded-lg shadow-md border-2 border-gray-200/50 flex items-center justify-center text-gray-700 hover:bg-gray-50 hover:text-blue-600 transition-colors peer"
@@ -1020,10 +1013,11 @@ export default function App() {
               Satellite
             </button>
             <button 
-              onClick={() => setActiveLayer('hybrid')} 
-              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${activeLayer === 'hybrid' ? 'bg-blue-100 text-blue-700' : 'bg-transparent text-gray-700 hover:bg-gray-100'}`}
+              onClick={() => setActiveLayer('topo')} 
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${activeLayer === 'topo' ? 'bg-blue-100 text-blue-700' : 'bg-transparent text-gray-700 hover:bg-gray-100'}`}
+              title="Tracestrack Topo from OpenStreetMap"
             >
-              Hybrid
+              Tracestrack Topo
             </button>
           </div>
         </div>
