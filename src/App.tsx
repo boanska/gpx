@@ -906,8 +906,9 @@ export default function App() {
           )}
           {activeLayer === 'topo' && (
             <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors. Tiles courtesy of <a href="https://www.tracestrack.com/" target="_blank" rel="noopener noreferrer">Tracestrack Maps</a>'
-              url="/api/tiles/topo/{z}/{x}/{y}.webp"
+              attribution='Map data: &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors, SRTM | Map style: &copy; <a href="https://opentopomap.org" target="_blank" rel="noopener noreferrer">OpenTopoMap</a> (<a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener noreferrer">CC-BY-SA</a>)'
+              url="https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png"
+              maxNativeZoom={17}
               maxZoom={19}
             />
           )}
@@ -1015,9 +1016,9 @@ export default function App() {
             <button 
               onClick={() => setActiveLayer('topo')} 
               className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${activeLayer === 'topo' ? 'bg-blue-100 text-blue-700' : 'bg-transparent text-gray-700 hover:bg-gray-100'}`}
-              title="Tracestrack Topo from OpenStreetMap"
+              title="Topographic map from OpenStreetMap (OpenTopoMap)"
             >
-              Tracestrack Topo
+              OSM Topo
             </button>
           </div>
         </div>
