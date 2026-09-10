@@ -349,32 +349,6 @@ async function parseSpecialInput(input: string): Promise<{lat: number, lng: numb
   return null;
 }
 
-async function resolveLocationName(input: string): Promise<{lat: number, lng: number, name: string, shortName: string} | null> {
-  if (!input || !input.trim()) return null;
-  const special = await parseSpecialInput(input);
-  if (special && special.length > 0) return special[0];
-  
-  try {
-    const searchRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(input)}&limit=1&addressdetails=1`, {
-      headers: { 'User-Agent': 'MapsToGPX-AIStudio-App' }
-    });
-    const data = await searchRes.json();
-    if (data && data.length > 0) {
-      const r = data[0];
-      const shortName = r.address ? (r.address.city || r.address.town || r.address.village || r.address.county || r.name) : r.display_name.split(',')[0];
-      return {
-        lat: parseFloat(r.lat),
-        lng: parseFloat(r.lon),
-        name: r.display_name,
-        shortName: shortName
-      };
-    }
-  } catch (e) {
-    console.error(e);
-  }
-  return null;
-}
-
 function LocationSearch({ 
   label, 
   placeholder, 
@@ -511,23 +485,27 @@ function LocationSearch({
 }
 
 export default function App() {
-  const [isUrlLoading, setIsUrlLoading] = useState(() => {
-    const params = new URLSearchParams(window.location.search);
-    return !!params.get('route');
-  });
-
   const [locations, setLocations] = useState<({lat: number, lng: number, name: string, shortName?: string} | null)[]>(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('route')) return [null, null];
-    try {
-      const urlState = params.get('state');
-      if (urlState) {
-        const decoded = JSON.parse(decodeURIComponent(escape(atob(urlState))));
-        if (decoded.locations && Array.isArray(decoded.locations)) {
-          return decoded.locations;
+    const stopsParam = params.get('stops');
+    if (stopsParam) {
+      const namesParam = params.get('names');
+      const names = namesParam ? namesParam.split('|').map(n => decodeURIComponent(n)) : [];
+      const coords = stopsParam.split('|');
+      const loadedLocs = coords.map((c, i) => {
+        const [latStr, lngStr] = c.split(',');
+        if (latStr && lngStr) {
+          const lat = parseFloat(latStr);
+          const lng = parseFloat(lngStr);
+          const name = names[i] || `${lat}, ${lng}`;
+          return { lat, lng, name, shortName: names[i] || name };
         }
-      }
-    } catch(e) {}
+        return null;
+      });
+      while (loadedLocs.length < 2) loadedLocs.push(null);
+      return loadedLocs;
+    }
+
     try {
       const saved = localStorage.getItem('gpx_locations');
       if (saved) {
@@ -542,13 +520,6 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     const mode = params.get('mode');
     if (mode === 'car' || mode === 'train' || mode === 'foot') return mode;
-    try {
-      const urlState = params.get('state');
-      if (urlState) {
-        const decoded = JSON.parse(decodeURIComponent(escape(atob(urlState))));
-        if (decoded.travelMode) return decoded.travelMode;
-      }
-    } catch(e) {}
     return (localStorage.getItem('gpx_travelMode') as any) || 'car';
   });
   
@@ -623,52 +594,9 @@ export default function App() {
   }, [headerTitle, locations]);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const routeParam = params.get('route');
-    if (routeParam) {
-      const names = routeParam.split('|').filter(Boolean);
-      if (names.length > 0) {
-        const fetchLocations = async () => {
-          try {
-            const locs = await Promise.all(names.map(name => resolveLocationName(name)));
-            const finalLocs = locs.map(l => l || null);
-            while (finalLocs.length < 2) finalLocs.push(null);
-            setLocations(finalLocs);
-          } catch (e) {
-            console.error(e);
-          } finally {
-            setIsUrlLoading(false);
-          }
-        };
-        fetchLocations();
-      } else {
-        setIsUrlLoading(false);
-      }
-    } else {
-      setIsUrlLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (isUrlLoading) return;
-
     localStorage.setItem('gpx_locations', JSON.stringify(locations));
     localStorage.setItem('gpx_travelMode', travelMode);
-
-    try {
-      const searchParams = new URLSearchParams(window.location.search);
-      const validNames = locations.map(l => l ? l.name : '').filter(Boolean);
-      if (validNames.length > 0) {
-        searchParams.set('route', validNames.join('|'));
-      } else {
-        searchParams.delete('route');
-      }
-      searchParams.set('mode', travelMode);
-      searchParams.delete('state');
-      const newUrl = `${window.location.pathname}?${searchParams.toString()}`;
-      window.history.replaceState(null, '', newUrl);
-    } catch(e) {}
-  }, [locations, travelMode, isUrlLoading]);
+  }, [locations, travelMode]);
 
   const validLocations = locations.filter(l => l !== null) as {lat: number, lng: number, name: string, shortName?: string}[];
 
@@ -770,6 +698,23 @@ export default function App() {
     window.location.href = "https://www.dropbox.com/home/Apps/Fog%20of%20World/Import";
   };
 
+  const handleShare = () => {
+    const validLocs = locations.filter(l => l !== null);
+    if (validLocs.length < 2) return;
+    const title = validLocs.map(l => l.shortName || l.name.split(',')[0]).join(' -> ');
+    const coords = validLocs.map(l => `${l.lat.toFixed(5)},${l.lng.toFixed(5)}`).join('|');
+    const names = validLocs.map(l => encodeURIComponent(l.shortName || l.name.split(',')[0])).join('|');
+    const url = new URL(window.location.href);
+    url.search = '';
+    url.searchParams.set('mode', travelMode);
+    url.searchParams.set('stops', coords);
+    url.searchParams.set('names', names);
+  
+    navigator.clipboard.writeText(`${title}\n${url.toString()}`).then(() => {
+      alert("Link copied to clipboard!");
+    });
+  };
+
   const handleDownload = () => {
     if (routePoints.length === 0) return;
     const modeStr = travelMode === 'foot' ? 'walk' : travelMode;
@@ -814,7 +759,14 @@ export default function App() {
                 </>
               ) : (
                 <>
-                  <Route className="w-4 h-4 text-blue-100 shrink-0" />
+                  <button
+                    onClick={handleShare}
+                    className="shrink-0 hover:bg-white/20 p-1 -ml-1 rounded transition-colors"
+                    title="Copy Link to Clipboard"
+                    aria-label="Copy Link to Clipboard"
+                  >
+                    <Route className="w-4 h-4 text-blue-100" />
+                  </button>
                   <div className="flex-1 overflow-hidden relative flex items-center" ref={headerContainerRef}>
                     <div 
                       ref={headerTextRef} 
