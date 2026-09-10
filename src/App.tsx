@@ -487,6 +487,16 @@ function LocationSearch({
 export default function App() {
   const [locations, setLocations] = useState<({lat: number, lng: number, name: string, shortName?: string} | null)[]>(() => {
     try {
+      const params = new URLSearchParams(window.location.search);
+      const urlState = params.get('state');
+      if (urlState) {
+        const decoded = JSON.parse(decodeURIComponent(escape(atob(urlState))));
+        if (decoded.locations && Array.isArray(decoded.locations)) {
+          return decoded.locations;
+        }
+      }
+    } catch(e) {}
+    try {
       const saved = localStorage.getItem('gpx_locations');
       if (saved) {
         const parsed = JSON.parse(saved);
@@ -497,6 +507,16 @@ export default function App() {
   });
   
   const [travelMode, setTravelMode] = useState<'car' | 'train' | 'foot'>(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const urlState = params.get('state');
+      if (urlState) {
+        const decoded = JSON.parse(decodeURIComponent(escape(atob(urlState))));
+        if (decoded.travelMode) {
+          return decoded.travelMode;
+        }
+      }
+    } catch(e) {}
     return (localStorage.getItem('gpx_travelMode') as any) || 'car';
   });
   
@@ -572,11 +592,17 @@ export default function App() {
 
   useEffect(() => {
     localStorage.setItem('gpx_locations', JSON.stringify(locations));
-  }, [locations]);
-
-  useEffect(() => {
     localStorage.setItem('gpx_travelMode', travelMode);
-  }, [travelMode]);
+
+    try {
+      const state = { locations, travelMode };
+      const searchParams = new URLSearchParams(window.location.search);
+      const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(state))));
+      searchParams.set('state', encoded);
+      const newUrl = `${window.location.pathname}?${searchParams.toString()}`;
+      window.history.replaceState(null, '', newUrl);
+    } catch(e) {}
+  }, [locations, travelMode]);
 
   const validLocations = locations.filter(l => l !== null) as {lat: number, lng: number, name: string, shortName?: string}[];
 
