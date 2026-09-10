@@ -349,6 +349,32 @@ async function parseSpecialInput(input: string): Promise<{lat: number, lng: numb
   return null;
 }
 
+async function resolveLocationName(input: string): Promise<{lat: number, lng: number, name: string, shortName: string} | null> {
+  if (!input || !input.trim()) return null;
+  const special = await parseSpecialInput(input);
+  if (special && special.length > 0) return special[0];
+  
+  try {
+    const searchRes = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(input)}&limit=1&addressdetails=1`, {
+      headers: { 'User-Agent': 'MapsToGPX-AIStudio-App' }
+    });
+    const data = await searchRes.json();
+    if (data && data.length > 0) {
+      const r = data[0];
+      const shortName = r.address ? (r.address.city || r.address.town || r.address.village || r.address.county || r.name) : r.display_name.split(',')[0];
+      return {
+        lat: parseFloat(r.lat),
+        lng: parseFloat(r.lon),
+        name: r.display_name,
+        shortName: shortName
+      };
+    }
+  } catch (e) {
+    console.error(e);
+  }
+  return null;
+}
+
 function LocationSearch({ 
   label, 
   placeholder, 
@@ -485,9 +511,15 @@ function LocationSearch({
 }
 
 export default function App() {
+  const [isUrlLoading, setIsUrlLoading] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return !!params.get('route');
+  });
+
   const [locations, setLocations] = useState<({lat: number, lng: number, name: string, shortName?: string} | null)[]>(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('route')) return [null, null];
     try {
-      const params = new URLSearchParams(window.location.search);
       const urlState = params.get('state');
       if (urlState) {
         const decoded = JSON.parse(decodeURIComponent(escape(atob(urlState))));
@@ -507,14 +539,14 @@ export default function App() {
   });
   
   const [travelMode, setTravelMode] = useState<'car' | 'train' | 'foot'>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const mode = params.get('mode');
+    if (mode === 'car' || mode === 'train' || mode === 'foot') return mode;
     try {
-      const params = new URLSearchParams(window.location.search);
       const urlState = params.get('state');
       if (urlState) {
         const decoded = JSON.parse(decodeURIComponent(escape(atob(urlState))));
-        if (decoded.travelMode) {
-          return decoded.travelMode;
-        }
+        if (decoded.travelMode) return decoded.travelMode;
       }
     } catch(e) {}
     return (localStorage.getItem('gpx_travelMode') as any) || 'car';
@@ -591,18 +623,52 @@ export default function App() {
   }, [headerTitle, locations]);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const routeParam = params.get('route');
+    if (routeParam) {
+      const names = routeParam.split('|').filter(Boolean);
+      if (names.length > 0) {
+        const fetchLocations = async () => {
+          try {
+            const locs = await Promise.all(names.map(name => resolveLocationName(name)));
+            const finalLocs = locs.map(l => l || null);
+            while (finalLocs.length < 2) finalLocs.push(null);
+            setLocations(finalLocs);
+          } catch (e) {
+            console.error(e);
+          } finally {
+            setIsUrlLoading(false);
+          }
+        };
+        fetchLocations();
+      } else {
+        setIsUrlLoading(false);
+      }
+    } else {
+      setIsUrlLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isUrlLoading) return;
+
     localStorage.setItem('gpx_locations', JSON.stringify(locations));
     localStorage.setItem('gpx_travelMode', travelMode);
 
     try {
-      const state = { locations, travelMode };
       const searchParams = new URLSearchParams(window.location.search);
-      const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(state))));
-      searchParams.set('state', encoded);
+      const validNames = locations.map(l => l ? l.name : '').filter(Boolean);
+      if (validNames.length > 0) {
+        searchParams.set('route', validNames.join('|'));
+      } else {
+        searchParams.delete('route');
+      }
+      searchParams.set('mode', travelMode);
+      searchParams.delete('state');
       const newUrl = `${window.location.pathname}?${searchParams.toString()}`;
       window.history.replaceState(null, '', newUrl);
     } catch(e) {}
-  }, [locations, travelMode]);
+  }, [locations, travelMode, isUrlLoading]);
 
   const validLocations = locations.filter(l => l !== null) as {lat: number, lng: number, name: string, shortName?: string}[];
 
